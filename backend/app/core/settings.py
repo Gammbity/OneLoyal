@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     password_hash_time_cost: int = 3
     password_hash_memory_cost: int = 65536
     password_hash_parallelism: int = 4
+    password_min_length: int = 8
 
     model_config = SettingsConfigDict(
         env_file=".env",
