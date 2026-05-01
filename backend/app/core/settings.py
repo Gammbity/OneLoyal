@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     password_hash_memory_cost: int = 65536
     password_hash_parallelism: int = 4
     password_min_length: int = 8
+    portal_access_token_expire_hours: int = 12
+    magic_link_default_expire_days: int = 30
+    portal_base_url: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

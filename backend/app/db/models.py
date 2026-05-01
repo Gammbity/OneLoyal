@@ -14,6 +14,7 @@ from app.modules.customers.models import (
     CustomerAssignment,
     CustomerExternalRef,
 )
+from app.modules.portal.models import MagicLinkToken
 from app.modules.progress.models import CustomerCampaignProgress
 from app.modules.sales.models import SaleRecord
 from app.modules.users.models import User
@@ -29,6 +30,7 @@ __all__ = [
     "CustomerCampaignProgress",
     "CustomerExternalRef",
     "GiftTier",
+    "MagicLinkToken",
     "Plan",
     "SaleRecord",
     "UsageCounter",

@@ -5,6 +5,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.campaigns.router import router as campaigns_router
 from app.modules.companies.router import router as companies_router
 from app.modules.customers.router import router as customers_router
+from app.modules.portal.router import router as portal_router
 from app.modules.progress.router import router as progress_router
 from app.modules.sales.router import router as sale_records_router
 from app.modules.users.router import router as users_router
@@ -18,3 +19,4 @@ api_router.include_router(campaigns_router)
 api_router.include_router(customers_router)
 api_router.include_router(sale_records_router)
 api_router.include_router(progress_router)
+api_router.include_router(portal_router)

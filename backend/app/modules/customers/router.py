@@ -22,6 +22,8 @@ from app.modules.customers.schemas import (
     CustomerUpdateRequest,
 )
 from app.modules.customers.service import customer_service
+from app.modules.portal.schemas import MagicLinkCreateResponse, MagicLinkListItem
+from app.modules.portal.service import portal_service
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -116,6 +118,63 @@ async def delete_customer(
 
 
 @router.post(
+    "/{customer_id}/magic-links",
+    response_model=MagicLinkCreateResponse,
+    status_code=201,
+)
+async def create_customer_magic_link(
+    customer_id: UUID,
+    current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> MagicLinkCreateResponse:
+    magic_link = await portal_service.create_magic_link(
+        session,
+        company_id=current_user.user.company_id,
+        customer_id=customer_id,
+        created_by_user_id=current_user.user.id,
+    )
+    await session.commit()
+    return magic_link
+
+
+@router.get(
+    "/{customer_id}/magic-links",
+    response_model=list[MagicLinkListItem],
+)
+async def list_customer_magic_links(
+    customer_id: UUID,
+    current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> list[MagicLinkListItem]:
+    magic_links = await portal_service.list_magic_links(
+        session,
+        company_id=current_user.user.company_id,
+        customer_id=customer_id,
+    )
+    return [MagicLinkListItem.model_validate(magic_link) for magic_link in magic_links]
+
+
+@router.post(
+    "/{customer_id}/magic-links/{token_id}/revoke",
+    response_model=MagicLinkListItem,
+)
+async def revoke_customer_magic_link(
+    customer_id: UUID,
+    token_id: UUID,
+    current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> MagicLinkListItem:
+    magic_link = await portal_service.revoke_magic_link(
+        session,
+        company_id=current_user.user.company_id,
+        customer_id=customer_id,
+        token_id=token_id,
+    )
+    await session.commit()
+    return MagicLinkListItem.model_validate(magic_link)
+
+
+@router.post(
     "/{customer_id}/external-refs",
     response_model=CustomerExternalRefResponse,
     status_code=201,
@@ -192,4 +251,3 @@ async def unassign_customer(
     )
     await session.commit()
     return Response(status_code=204)
-
