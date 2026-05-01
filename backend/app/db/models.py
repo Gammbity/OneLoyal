@@ -14,6 +14,7 @@ from app.modules.customers.models import (
     CustomerAssignment,
     CustomerExternalRef,
 )
+from app.modules.progress.models import CustomerCampaignProgress
 from app.modules.sales.models import SaleRecord
 from app.modules.users.models import User
 
@@ -25,6 +26,7 @@ __all__ = [
     "CompanyUsageLimit",
     "Customer",
     "CustomerAssignment",
+    "CustomerCampaignProgress",
     "CustomerExternalRef",
     "GiftTier",
     "Plan",
