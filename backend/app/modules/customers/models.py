@@ -26,6 +26,7 @@ class CustomerStatus(StrEnum):
 
 
 class ExternalProvider(StrEnum):
+    FAKE = "fake"
     MOYSKLAD = "moysklad"
     CSV = "csv"
     MANUAL = "manual"
@@ -139,4 +140,3 @@ class CustomerAssignment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     company: Mapped[Company] = relationship()
     customer: Mapped[Customer] = relationship()
     sales_manager: Mapped[User] = relationship()
-

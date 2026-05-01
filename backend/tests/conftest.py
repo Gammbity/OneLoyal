@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Generator
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -18,6 +19,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     monkeypatch.setenv("PASSWORD_HASH_MEMORY_COST", "1024")
     monkeypatch.setenv("PASSWORD_HASH_PARALLELISM", "1")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-enough-length-for-hs256")
+    monkeypatch.setenv("ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
     get_settings.cache_clear()
 
     db_path = tmp_path / "test.db"
@@ -40,6 +42,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
             yield session
 
     app = create_app()
+    app.state.test_sessionmaker = SessionLocal
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
