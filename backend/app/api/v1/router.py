@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.health import router as health_router
 from app.modules.auth.router import router as auth_router
+from app.modules.campaigns.router import router as campaigns_router
 from app.modules.companies.router import router as companies_router
 from app.modules.users.router import router as users_router
 
@@ -10,3 +11,4 @@ api_router.include_router(health_router)
 api_router.include_router(auth_router)
 api_router.include_router(companies_router)
 api_router.include_router(users_router)
+api_router.include_router(campaigns_router)
