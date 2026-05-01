@@ -1,0 +1,74 @@
+services:
+  api:
+    build:
+      context: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: .
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=INFO
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oneloyal}
+      POSTGRES_USER: ${POSTGRES_USER:-oneloyal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oneloyal}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+

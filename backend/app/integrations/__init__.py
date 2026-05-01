@@ -1,0 +1,2 @@
+"""ERP integration package placeholder."""
+
