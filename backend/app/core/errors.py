@@ -1,4 +1,5 @@
 import logging
+from enum import StrEnum
 from http import HTTPStatus
 from typing import Any
 
@@ -12,6 +13,17 @@ from app.core.logging import get_request_id
 from app.core.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+class ErrorCode(StrEnum):
+    INTERNAL_SERVER_ERROR = "internal_server_error"
+    VALIDATION_ERROR = "validation_error"
+    NOT_FOUND = "not_found"
+    CONFLICT = "conflict"
+    FORBIDDEN = "forbidden"
+    UNAUTHORIZED = "unauthorized"
+    BAD_REQUEST = "bad_request"
+    HTTP_ERROR = "http_error"
 
 
 class AppError(Exception):
@@ -30,6 +42,86 @@ class AppError(Exception):
         self.status_code = status_code
         self.details = details or {}
         super().__init__(message)
+
+
+class NotFoundError(AppError):
+    def __init__(
+        self,
+        message: str = "Resource not found.",
+        *,
+        code: str = ErrorCode.NOT_FOUND,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            status_code=404,
+            details=details,
+        )
+
+
+class ConflictError(AppError):
+    def __init__(
+        self,
+        message: str = "Resource conflict.",
+        *,
+        code: str = ErrorCode.CONFLICT,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            status_code=409,
+            details=details,
+        )
+
+
+class ForbiddenError(AppError):
+    def __init__(
+        self,
+        message: str = "Forbidden.",
+        *,
+        code: str = ErrorCode.FORBIDDEN,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            status_code=403,
+            details=details,
+        )
+
+
+class UnauthorizedError(AppError):
+    def __init__(
+        self,
+        message: str = "Unauthorized.",
+        *,
+        code: str = ErrorCode.UNAUTHORIZED,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            status_code=401,
+            details=details,
+        )
+
+
+class ValidationAppError(AppError):
+    def __init__(
+        self,
+        message: str = "Validation failed.",
+        *,
+        code: str = ErrorCode.VALIDATION_ERROR,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            status_code=422,
+            details=details,
+        )
 
 
 def _request_id_from(request: Request) -> str:
@@ -69,7 +161,7 @@ async def http_exception_handler(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
     message = HTTPStatus(exc.status_code).phrase
-    code = "http_error"
+    code = ErrorCode.HTTP_ERROR
     details: Any = {}
 
     if isinstance(exc.detail, dict):
@@ -93,7 +185,7 @@ async def validation_exception_handler(
 ) -> JSONResponse:
     return _error_response(
         status_code=422,
-        code="validation_error",
+        code=ErrorCode.VALIDATION_ERROR,
         message="Request validation failed.",
         details={"errors": exc.errors()},
         request_id=_request_id_from(request),
@@ -113,7 +205,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
     return _error_response(
         status_code=500,
-        code="internal_server_error",
+        code=ErrorCode.INTERNAL_SERVER_ERROR,
         message="Internal server error.",
         details=details,
         request_id=_request_id_from(request),

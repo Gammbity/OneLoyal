@@ -22,8 +22,16 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
 
     secret_key: str = "change-me-in-local-development"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 14
     encryption_key: str = "change-me-in-local-development"
     log_level: str = "INFO"
+    pagination_default_limit: int = 50
+    pagination_max_limit: int = 200
+    password_hash_time_cost: int = 3
+    password_hash_memory_cost: int = 65536
+    password_hash_parallelism: int = 4
 
     model_config = SettingsConfigDict(
         env_file=".env",

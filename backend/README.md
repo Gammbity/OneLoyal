@@ -8,13 +8,16 @@ This scaffold includes only the backend foundation:
 - `/api/v1` router
 - health endpoint
 - pydantic-settings configuration
+- reusable SQLAlchemy model mixins
 - async SQLAlchemy engine/session
 - Alembic async migration setup
+- reusable pagination utilities
 - Redis connection helper
 - Celery app
 - structured JSON logging
 - request ID middleware
 - standardized error responses
+- password hashing, JWT, and encryption utility foundations
 - Docker and Docker Compose
 - pytest smoke tests
 
@@ -47,6 +50,16 @@ cd backend
 uv sync
 cp .env.example .env
 ```
+
+Generate local secrets before using authentication or encryption features:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Use the first value for `SECRET_KEY` and the second value for `ENCRYPTION_KEY`.
+`ENCRYPTION_KEY` must be a valid Fernet key.
 
 If you run the API directly on your machine while PostgreSQL and Redis are exposed from Docker, change these values in `.env`:
 
@@ -132,4 +145,3 @@ Run Celery through Docker Compose:
 ```bash
 docker compose up worker
 ```
-
