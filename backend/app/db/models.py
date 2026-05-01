@@ -9,6 +9,12 @@ from app.modules.billing.models import (
 )
 from app.modules.campaigns.models import Campaign, GiftTier
 from app.modules.companies.models import Company, CompanySettings
+from app.modules.customers.models import (
+    Customer,
+    CustomerAssignment,
+    CustomerExternalRef,
+)
+from app.modules.sales.models import SaleRecord
 from app.modules.users.models import User
 
 __all__ = [
@@ -17,8 +23,12 @@ __all__ = [
     "CompanySettings",
     "CompanySubscription",
     "CompanyUsageLimit",
+    "Customer",
+    "CustomerAssignment",
+    "CustomerExternalRef",
     "GiftTier",
     "Plan",
+    "SaleRecord",
     "UsageCounter",
     "User",
     "UserSession",

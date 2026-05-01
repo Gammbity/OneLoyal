@@ -1,0 +1,2 @@
+"""Sales ledger module."""
+

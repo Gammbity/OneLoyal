@@ -15,7 +15,7 @@ from app.main import create_app
 @pytest.fixture
 def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     monkeypatch.setenv("PASSWORD_HASH_TIME_COST", "1")
-    monkeypatch.setenv("PASSWORD_HASH_MEMORY_COST", "8192")
+    monkeypatch.setenv("PASSWORD_HASH_MEMORY_COST", "1024")
     monkeypatch.setenv("PASSWORD_HASH_PARALLELISM", "1")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-enough-length-for-hs256")
     get_settings.cache_clear()
