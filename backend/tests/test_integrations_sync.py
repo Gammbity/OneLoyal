@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
@@ -7,7 +8,9 @@ from sqlalchemy import select
 
 from app.common.datetime import utc_now
 from app.modules.integrations.models import IntegrationCredential
+from app.modules.integrations.service import integration_service
 from app.modules.sync.models import SyncRun
+from app.modules.sync.service import sync_service
 
 
 def register_company(
@@ -127,7 +130,27 @@ def sync_integration(
         headers=auth_headers(token),
     )
     assert response.status_code == 200, response.json()
-    return response.json()
+    queued = response.json()
+    assert queued["status"] == "queued"
+    assert queued["task_id"]
+    SessionLocal = client.app.state.test_sessionmaker
+
+    async def execute_sync() -> None:
+        async with SessionLocal() as session:
+            await sync_service.execute_sync_run(
+                session,
+                sync_run_id=UUID(queued["sync_run_id"]),
+                use_redis_lock=False,
+            )
+            await session.commit()
+
+    asyncio.run(execute_sync())
+    sync_run_response = client.get(
+        f"/api/v1/sync-runs/{queued['sync_run_id']}",
+        headers=auth_headers(token),
+    )
+    assert sync_run_response.status_code == 200, sync_run_response.json()
+    return sync_run_response.json()
 
 
 def create_active_campaign(
@@ -159,6 +182,33 @@ def create_active_campaign(
     )
     assert activate_response.status_code == 200, activate_response.json()
     return activate_response.json()
+
+
+class FakeRedisLock:
+    def __init__(self, *, acquire: bool = True) -> None:
+        self.acquire = acquire
+        self.values: dict[str, str] = {}
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        ex: int,
+        nx: bool,
+    ) -> bool:
+        if not self.acquire:
+            return False
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def get(self, key: str) -> str | None:
+        return self.values.get(key)
+
+    async def delete(self, key: str) -> None:
+        self.values.pop(key, None)
 
 
 def test_integration_api_rbac_credentials_and_scoping(client: TestClient) -> None:
@@ -262,6 +312,30 @@ def test_update_and_test_fake_integration(client: TestClient) -> None:
     assert test_response.json()["ok"] is True
 
 
+def test_manual_sync_endpoint_queues_sync_run(client: TestClient) -> None:
+    owner = register_company(client)
+    integration = create_fake_integration(client, token=owner["access_token"])
+
+    response = client.post(
+        f"/api/v1/integrations/{integration['id']}/sync",
+        headers=auth_headers(owner["access_token"]),
+    )
+    get_response = client.get(
+        f"/api/v1/sync-runs/{response.json()['sync_run_id']}",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 200, response.json()
+    queued = response.json()
+    assert queued["status"] == "queued"
+    assert queued["task_id"]
+    assert get_response.status_code == 200
+    assert get_response.json()["status"] == "queued"
+    assert get_response.json()["task_id"] == queued["task_id"]
+    assert get_response.json()["enqueued_at"] is not None
+    assert get_response.json()["started_at"] is None
+
+
 def test_manual_sync_creates_customers_refs_sales_and_progress(
     client: TestClient,
 ) -> None:
@@ -309,6 +383,67 @@ def test_manual_sync_creates_customers_refs_sales_and_progress(
     assert progress_response.json()["total_amount_minor"] == 30_000_000
     assert integration_response.json()["last_attempted_sync_at"] is not None
     assert integration_response.json()["last_successful_sync_at"] is not None
+
+
+def test_execute_sync_run_uses_and_releases_redis_lock(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    owner = register_company(client)
+    integration = create_fake_integration(client, token=owner["access_token"])
+    redis = FakeRedisLock()
+    monkeypatch.setattr("app.modules.sync.service.get_redis_client", lambda: redis)
+    SessionLocal = client.app.state.test_sessionmaker
+
+    async def create_and_execute() -> str:
+        async with SessionLocal() as session:
+            sync_run = await sync_service.create_sync_run(
+                session,
+                company_id=UUID(owner["company"]["id"]),
+                integration_id=UUID(integration["id"]),
+                created_by_user_id=UUID(owner["user"]["id"]),
+            )
+            await sync_service.execute_sync_run(
+                session,
+                sync_run_id=sync_run.id,
+                use_redis_lock=True,
+            )
+            await session.commit()
+            return sync_run.status
+
+    status = asyncio.run(create_and_execute())
+
+    assert status == "success"
+    assert redis.values == {}
+
+
+def test_redis_lock_conflict_marks_sync_failed(client: TestClient, monkeypatch) -> None:
+    owner = register_company(client)
+    integration = create_fake_integration(client, token=owner["access_token"])
+    redis = FakeRedisLock(acquire=False)
+    monkeypatch.setattr("app.modules.sync.service.get_redis_client", lambda: redis)
+    SessionLocal = client.app.state.test_sessionmaker
+
+    async def create_and_execute() -> tuple[str, str | None]:
+        async with SessionLocal() as session:
+            sync_run = await sync_service.create_sync_run(
+                session,
+                company_id=UUID(owner["company"]["id"]),
+                integration_id=UUID(integration["id"]),
+                created_by_user_id=UUID(owner["user"]["id"]),
+            )
+            await sync_service.execute_sync_run(
+                session,
+                sync_run_id=sync_run.id,
+                use_redis_lock=True,
+            )
+            await session.commit()
+            return sync_run.status, sync_run.error_summary
+
+    status, error_summary = asyncio.run(create_and_execute())
+
+    assert status == "failed"
+    assert error_summary == "A sync is already running for this integration."
 
 
 def test_sync_is_idempotent_and_changed_sale_updates_existing_record(
@@ -418,6 +553,109 @@ def test_failed_provider_connection_marks_sync_failed(client: TestClient) -> Non
     assert integration_response.json()["last_attempted_sync_at"] is not None
     assert integration_response.json()["last_successful_sync_at"] is None
     assert integration_response.json()["status"] == "error"
+
+
+def test_scheduled_sync_queues_due_active_integrations(client: TestClient) -> None:
+    owner = register_company(client)
+    due_integration = create_fake_integration(
+        client,
+        token=owner["access_token"],
+        settings_json={
+            **fake_settings(),
+            "scheduled_sync_enabled": True,
+            "sync_frequency_minutes": 30,
+        },
+    )
+    disabled_schedule = create_fake_integration(
+        client,
+        token=owner["access_token"],
+        settings_json={**fake_settings(), "scheduled_sync_enabled": False},
+    )
+    not_due = create_fake_integration(
+        client,
+        token=owner["access_token"],
+        settings_json={
+            **fake_settings(),
+            "scheduled_sync_enabled": True,
+            "sync_frequency_minutes": 30,
+        },
+    )
+    for integration in [due_integration, disabled_schedule, not_due]:
+        response = client.patch(
+            f"/api/v1/integrations/{integration['id']}",
+            headers=auth_headers(owner["access_token"]),
+            json={"status": "active"},
+        )
+        assert response.status_code == 200, response.json()
+    SessionLocal = client.app.state.test_sessionmaker
+
+    async def make_not_due_and_schedule() -> dict[str, Any]:
+        async with SessionLocal() as session:
+            integration = await integration_service.get_integration(
+                session,
+                company_id=UUID(owner["company"]["id"]),
+                integration_id=UUID(not_due["id"]),
+            )
+            integration.next_sync_at = utc_now() + timedelta(minutes=20)
+            stats = await sync_service.create_due_scheduled_sync_runs(session)
+            await session.commit()
+            return stats
+
+    stats = asyncio.run(make_not_due_and_schedule())
+    sync_runs_response = client.get(
+        "/api/v1/sync-runs?sync_type=scheduled",
+        headers=auth_headers(owner["access_token"]),
+    )
+    integration_response = client.get(
+        f"/api/v1/integrations/{due_integration['id']}",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert stats["queued_count"] == 1
+    assert stats["skipped_not_enabled"] == 1
+    assert stats["skipped_not_due"] == 1
+    assert sync_runs_response.status_code == 200
+    assert sync_runs_response.json()["pagination"]["total"] == 1
+    assert sync_runs_response.json()["items"][0]["status"] == "queued"
+    assert integration_response.json()["last_scheduled_sync_at"] is not None
+    assert integration_response.json()["next_sync_at"] is not None
+
+
+def test_scheduled_sync_skips_existing_queued_sync(client: TestClient) -> None:
+    owner = register_company(client)
+    integration = create_fake_integration(
+        client,
+        token=owner["access_token"],
+        settings_json={
+            **fake_settings(),
+            "scheduled_sync_enabled": True,
+            "sync_frequency_minutes": 30,
+        },
+    )
+    patch_response = client.patch(
+        f"/api/v1/integrations/{integration['id']}",
+        headers=auth_headers(owner["access_token"]),
+        json={"status": "active"},
+    )
+    assert patch_response.status_code == 200, patch_response.json()
+    SessionLocal = client.app.state.test_sessionmaker
+
+    async def create_queued_and_schedule() -> dict[str, Any]:
+        async with SessionLocal() as session:
+            await sync_service.create_sync_run(
+                session,
+                company_id=UUID(owner["company"]["id"]),
+                integration_id=UUID(integration["id"]),
+                created_by_user_id=UUID(owner["user"]["id"]),
+            )
+            stats = await sync_service.create_due_scheduled_sync_runs(session)
+            await session.commit()
+            return stats
+
+    stats = asyncio.run(create_queued_and_schedule())
+
+    assert stats["queued_count"] == 0
+    assert stats["skipped_active_sync"] == 1
 
 
 def test_running_sync_conflict_is_rejected(client: TestClient) -> None:

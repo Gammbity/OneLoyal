@@ -17,6 +17,7 @@ from app.modules.integrations.providers.moysklad.mapper import (
 )
 from app.modules.integrations.providers.moysklad.provider import MoySkladProvider
 from app.modules.integrations.providers.registry import provider_registry
+from app.modules.sync.service import sync_service
 
 
 def auth_headers(token: str) -> dict[str, str]:
@@ -159,6 +160,40 @@ def create_active_campaign(client: TestClient, *, token: str) -> dict[str, Any]:
     )
     assert activate_response.status_code == 200, activate_response.json()
     return activate_response.json()
+
+
+def queue_and_execute_sync(
+    client: TestClient,
+    *,
+    token: str,
+    integration_id: str,
+) -> dict[str, Any]:
+    response = client.post(
+        f"/api/v1/integrations/{integration_id}/sync",
+        headers=auth_headers(token),
+    )
+    assert response.status_code == 200, response.json()
+    queued = response.json()
+    assert queued["status"] == "queued"
+    assert queued["task_id"]
+    SessionLocal = client.app.state.test_sessionmaker
+
+    async def execute_sync() -> None:
+        async with SessionLocal() as session:
+            await sync_service.execute_sync_run(
+                session,
+                sync_run_id=UUID(queued["sync_run_id"]),
+                use_redis_lock=False,
+            )
+            await session.commit()
+
+    asyncio.run(execute_sync())
+    sync_run_response = client.get(
+        f"/api/v1/sync-runs/{queued['sync_run_id']}",
+        headers=auth_headers(token),
+    )
+    assert sync_run_response.status_code == 200, sync_run_response.json()
+    return sync_run_response.json()
 
 
 def test_moysklad_provider_is_registered() -> None:
@@ -473,13 +508,15 @@ def test_moysklad_integration_create_test_and_customer_only_sync(
         f"/api/v1/integrations/{integration['id']}/test",
         headers=auth_headers(owner["access_token"]),
     )
-    sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
-    second_sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    second_sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
     customers_response = client.get(
         "/api/v1/customers",
@@ -488,17 +525,14 @@ def test_moysklad_integration_create_test_and_customer_only_sync(
 
     assert test_response.status_code == 200, test_response.json()
     assert test_response.json()["ok"] is True
-    assert sync_response.status_code == 200, sync_response.json()
-    sync_run = sync_response.json()
     assert sync_run["status"] == "success"
     assert sync_run["stats_json"]["fetched_customers"] == 2
     assert sync_run["stats_json"]["created_customers"] == 2
     assert sync_run["stats_json"]["fetched_sales"] == 0
     assert "sales_not_supported" not in sync_run["stats_json"]
     assert sync_run["stats_json"]["recalculated_progress_count"] == 0
-    assert second_sync_response.status_code == 200, second_sync_response.json()
-    assert second_sync_response.json()["stats_json"]["created_customers"] == 0
-    assert second_sync_response.json()["stats_json"]["updated_customers"] == 0
+    assert second_sync_run["stats_json"]["created_customers"] == 0
+    assert second_sync_run["stats_json"]["updated_customers"] == 0
     customers = customers_response.json()
     assert customers["pagination"]["total"] == 2
     assert {item["name"] for item in customers["items"]} == {
@@ -546,9 +580,10 @@ def test_moysklad_sync_creates_external_refs_and_keeps_credentials_hidden(
     integration = create_moysklad_integration(client, token=owner["access_token"])
     SessionLocal = client.app.state.test_sessionmaker
 
-    sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
 
     async def load_records() -> tuple[str, Customer, CustomerExternalRef]:
@@ -569,7 +604,7 @@ def test_moysklad_sync_creates_external_refs_and_keeps_credentials_hidden(
 
     encrypted_credentials, customer, external_ref = asyncio.run(load_records())
 
-    assert sync_response.status_code == 200, sync_response.json()
+    assert sync_run["status"] == "success"
     assert integration["has_active_credentials"] is True
     assert "credentials_json" not in integration
     assert "encrypted_credentials" not in integration
@@ -620,9 +655,10 @@ def test_moysklad_sync_creates_sales_and_recalculates_progress(
     campaign = create_active_campaign(client, token=owner["access_token"])
     integration = create_moysklad_integration(client, token=owner["access_token"])
 
-    sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
     sales_response = client.get(
         "/api/v1/sale-records",
@@ -638,8 +674,6 @@ def test_moysklad_sync_creates_sales_and_recalculates_progress(
         headers=auth_headers(owner["access_token"]),
     )
 
-    assert sync_response.status_code == 200, sync_response.json()
-    sync_run = sync_response.json()
     assert sync_run["status"] == "success"
     assert sync_run["stats_json"]["created_sales"] == 1
     assert sync_run["stats_json"]["recalculated_progress_count"] == 1
@@ -703,32 +737,32 @@ def test_moysklad_sync_is_idempotent_and_changed_demand_updates_sale(
     owner = register_company(client)
     integration = create_moysklad_integration(client, token=owner["access_token"])
 
-    first_sync = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    first_sync = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
-    second_sync = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    second_sync = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
     state["amount"] = 40_000_000
     state["updated"] = "2026-06-15 12:00:00"
-    third_sync = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    third_sync = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
     sales_response = client.get(
         "/api/v1/sale-records",
         headers=auth_headers(owner["access_token"]),
     )
 
-    assert first_sync.status_code == 200, first_sync.json()
-    assert second_sync.status_code == 200, second_sync.json()
-    assert third_sync.status_code == 200, third_sync.json()
-    assert first_sync.json()["stats_json"]["created_sales"] == 1
-    assert second_sync.json()["stats_json"]["created_sales"] == 0
-    assert second_sync.json()["stats_json"]["updated_sales"] == 0
-    assert third_sync.json()["stats_json"]["updated_sales"] == 1
+    assert first_sync["stats_json"]["created_sales"] == 1
+    assert second_sync["stats_json"]["created_sales"] == 0
+    assert second_sync["stats_json"]["updated_sales"] == 0
+    assert third_sync["stats_json"]["updated_sales"] == 1
     sales = sales_response.json()
     assert sales["pagination"]["total"] == 1
     assert sales["items"][0]["gross_amount_minor"] == 40_000_000
@@ -772,18 +806,18 @@ def test_moysklad_missing_sale_customer_ref_creates_sync_error(
     owner = register_company(client)
     integration = create_moysklad_integration(client, token=owner["access_token"])
 
-    sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
     errors_response = client.get(
-        f"/api/v1/sync-runs/{sync_response.json()['id']}/errors",
+        f"/api/v1/sync-runs/{sync_run['id']}/errors",
         headers=auth_headers(owner["access_token"]),
     )
 
-    assert sync_response.status_code == 200, sync_response.json()
-    assert sync_response.json()["status"] == "partially_failed"
-    assert sync_response.json()["stats_json"]["skipped_sales"] == 1
+    assert sync_run["status"] == "partially_failed"
+    assert sync_run["stats_json"]["skipped_sales"] == 1
     assert errors_response.status_code == 200, errors_response.json()
     errors = errors_response.json()["items"]
     assert len(errors) == 1
@@ -829,18 +863,18 @@ def test_moysklad_mapping_error_creates_sync_error(
     owner = register_company(client)
     integration = create_moysklad_integration(client, token=owner["access_token"])
 
-    sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
     errors_response = client.get(
-        f"/api/v1/sync-runs/{sync_response.json()['id']}/errors",
+        f"/api/v1/sync-runs/{sync_run['id']}/errors",
         headers=auth_headers(owner["access_token"]),
     )
 
-    assert sync_response.status_code == 200, sync_response.json()
-    assert sync_response.json()["status"] == "partially_failed"
-    assert sync_response.json()["stats_json"]["skipped_sales"] == 1
+    assert sync_run["status"] == "partially_failed"
+    assert sync_run["stats_json"]["skipped_sales"] == 1
     assert errors_response.json()["items"][0]["external_id"] == "bad-demand"
     assert errors_response.json()["items"][0]["error_code"] == "mapping_error"
 
@@ -886,9 +920,10 @@ def test_moysklad_demand_outside_campaign_does_not_affect_progress(
     campaign = create_active_campaign(client, token=owner["access_token"])
     integration = create_moysklad_integration(client, token=owner["access_token"])
 
-    sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
     customers_response = client.get(
         "/api/v1/customers",
@@ -900,8 +935,7 @@ def test_moysklad_demand_outside_campaign_does_not_affect_progress(
         headers=auth_headers(owner["access_token"]),
     )
 
-    assert sync_response.status_code == 200, sync_response.json()
-    assert sync_response.json()["status"] == "success"
+    assert sync_run["status"] == "success"
     assert progress_response.status_code == 200
     assert progress_response.json()["total_amount_minor"] == 0
 
@@ -958,16 +992,15 @@ def test_moysklad_test_and_sync_handle_provider_failure(
         f"/api/v1/integrations/{integration['id']}/test",
         headers=auth_headers(owner["access_token"]),
     )
-    sync_response = client.post(
-        f"/api/v1/integrations/{integration['id']}/sync",
-        headers=auth_headers(owner["access_token"]),
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
     )
 
     assert test_response.status_code == 200, test_response.json()
     assert test_response.json()["ok"] is False
     assert "moysklad-secret" not in str(test_response.json())
-    assert sync_response.status_code == 200, sync_response.json()
-    sync_run = sync_response.json()
     assert sync_run["status"] == "failed"
     assert sync_run["error_summary"] == message
     assert "moysklad-secret" not in str(sync_run)

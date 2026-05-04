@@ -22,7 +22,7 @@ This scaffold includes only the backend foundation:
 - Docker and Docker Compose
 - pytest smoke tests
 
-Frontend code, scheduled ERP sync, and MoySklad returns/refunds sync are intentionally not implemented yet.
+Frontend code and MoySklad returns/refunds sync are intentionally not implemented yet.
 
 ## Project Structure
 
@@ -146,6 +146,18 @@ Run Celery through Docker Compose:
 ```bash
 docker compose up worker
 ```
+
+Run Celery Beat for scheduled sync dispatch:
+
+```bash
+uv run celery -A app.workers.celery_app.celery_app beat --loglevel=INFO
+docker compose up beat
+```
+
+Manual sync requests enqueue a `SyncRun` and return immediately. Workers execute
+`app.sync.execute`; Beat runs `app.sync.schedule_due` every minute and queues active
+integrations with `scheduled_sync_enabled=true` and `sync_frequency_minutes` in
+their `settings_json`.
 
 ## MoySklad Settings
 

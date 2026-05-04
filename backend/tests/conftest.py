@@ -20,6 +20,7 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     monkeypatch.setenv("PASSWORD_HASH_PARALLELISM", "1")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-enough-length-for-hs256")
     monkeypatch.setenv("ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setenv("SYNC_ENQUEUE_TASKS", "false")
     get_settings.cache_clear()
 
     db_path = tmp_path / "test.db"

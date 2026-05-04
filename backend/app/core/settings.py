@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     moysklad_timeout_seconds: float = 15.0
     moysklad_page_limit: int = Field(default=1000, ge=1, le=1000)
     moysklad_max_retries: int = Field(default=2, ge=0)
+    sync_lock_ttl_seconds: int = 1800
+    sync_task_time_limit_seconds: int = 3600
+    sync_task_soft_time_limit_seconds: int = 3300
+    sync_enqueue_tasks: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

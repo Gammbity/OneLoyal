@@ -40,6 +40,8 @@ services:
     volumes:
       - ./app:/app/app
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -71,4 +73,3 @@ services:
 
 volumes:
   postgres_data:
-

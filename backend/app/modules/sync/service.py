@@ -1,14 +1,19 @@
+import secrets
 from collections.abc import Iterable
-from datetime import datetime
+from contextlib import suppress
+from datetime import datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.common.datetime import ensure_timezone_aware, utc_now
 from app.common.pagination import PaginationParams
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
+from app.core.redis import get_redis_client
+from app.core.settings import get_settings
 from app.modules.campaigns.models import Campaign, CampaignStatus
 from app.modules.customers.models import (
     Customer,
@@ -38,6 +43,11 @@ from app.modules.sync.models import (
     SyncRunStatus,
     SyncType,
 )
+
+ACTIVE_SYNC_STATUSES = {
+    SyncRunStatus.QUEUED.value,
+    SyncRunStatus.RUNNING.value,
+}
 
 
 def _empty_stats() -> dict[str, Any]:
@@ -103,6 +113,62 @@ def _external_updated_is_newer(existing: SaleRecord, sale: ERPSaleDTO) -> bool:
 
 
 class SyncService:
+    def new_task_id(self) -> str:
+        return str(uuid4())
+
+    async def create_sync_run(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID,
+        integration_id: UUID,
+        created_by_user_id: UUID | None,
+        sync_type: str = SyncType.MANUAL.value,
+        task_id: str | None = None,
+    ) -> SyncRun:
+        integration = await integration_service.get_integration(
+            session,
+            company_id=company_id,
+            integration_id=integration_id,
+        )
+        if integration.status == IntegrationStatus.DISABLED.value:
+            raise ConflictError("Disabled integrations cannot be synced.")
+        await self._ensure_no_active_sync(
+            session,
+            company_id=company_id,
+            integration_id=integration_id,
+        )
+
+        sync_run = SyncRun(
+            company_id=company_id,
+            integration_id=integration_id,
+            sync_type=sync_type,
+            status=SyncRunStatus.QUEUED.value,
+            task_id=task_id or self.new_task_id(),
+            enqueued_at=utc_now(),
+            started_at=None,
+            cursor_before_json=integration.sync_cursor_json or {},
+            cursor_after_json={},
+            stats_json=_empty_stats(),
+            created_by_user_id=created_by_user_id,
+        )
+        session.add(sync_run)
+        await session.flush()
+        return sync_run
+
+    def publish_sync_run(self, sync_run_id: UUID, *, task_id: str | None = None) -> str:
+        task_id = task_id or self.new_task_id()
+        if not get_settings().sync_enqueue_tasks:
+            return task_id
+
+        from app.modules.sync.tasks import sync_integration_task
+
+        result = sync_integration_task.apply_async(
+            args=[str(sync_run_id)],
+            task_id=task_id,
+        )
+        return str(result.id)
+
     async def sync_integration(
         self,
         session: AsyncSession,
@@ -112,34 +178,76 @@ class SyncService:
         created_by_user_id: UUID | None,
         sync_type: str = SyncType.MANUAL.value,
     ) -> SyncRun:
-        integration = await integration_service.get_integration(
+        sync_run = await self.create_sync_run(
             session,
             company_id=company_id,
             integration_id=integration_id,
+            created_by_user_id=created_by_user_id,
+            sync_type=sync_type,
         )
-        if integration.status == IntegrationStatus.DISABLED.value:
-            raise ConflictError("Disabled integrations cannot be synced.")
-        await self._ensure_no_running_sync(
+        return await self.execute_sync_run(
             session,
-            company_id=company_id,
-            integration_id=integration_id,
+            sync_run_id=sync_run.id,
+            use_redis_lock=False,
         )
 
+    async def execute_sync_run(
+        self,
+        session: AsyncSession,
+        *,
+        sync_run_id: UUID,
+        use_redis_lock: bool = True,
+    ) -> SyncRun:
+        sync_run = await self._get_sync_run_by_id(session, sync_run_id=sync_run_id)
+        integration = await integration_service.get_integration(
+            session,
+            company_id=sync_run.company_id,
+            integration_id=sync_run.integration_id,
+        )
+        lock_token: str | None = None
+        try:
+            if use_redis_lock:
+                lock_token = await self._acquire_integration_lock(integration.id)
+            return await self._execute_sync_run(
+                session,
+                sync_run=sync_run,
+                integration=integration,
+            )
+        except Exception as exc:
+            await self._mark_run_failed_from_exception(
+                session,
+                sync_run=sync_run,
+                integration=integration,
+                exc=exc,
+            )
+            await session.flush()
+            return sync_run
+        finally:
+            if lock_token is not None:
+                with suppress(Exception):
+                    await self._release_integration_lock(
+                        integration.id,
+                        token=lock_token,
+                    )
+
+    async def _execute_sync_run(
+        self,
+        session: AsyncSession,
+        *,
+        sync_run: SyncRun,
+        integration: Integration,
+    ) -> SyncRun:
         now = utc_now()
         stats = _empty_stats()
-        sync_run = SyncRun(
-            company_id=company_id,
-            integration_id=integration_id,
-            sync_type=sync_type,
-            status=SyncRunStatus.RUNNING.value,
-            started_at=now,
-            cursor_before_json=integration.sync_cursor_json or {},
-            cursor_after_json={},
-            stats_json=stats,
-            created_by_user_id=created_by_user_id,
-        )
+        company_id = sync_run.company_id
+        sync_run.status = SyncRunStatus.RUNNING.value
+        sync_run.started_at = now
+        sync_run.finished_at = None
+        sync_run.cursor_before_json = integration.sync_cursor_json or {}
+        sync_run.cursor_after_json = {}
+        sync_run.stats_json = stats
+        sync_run.error_summary = None
         integration.last_attempted_sync_at = now
-        session.add(sync_run)
         await session.flush()
 
         try:
@@ -406,7 +514,18 @@ class SyncService:
             )
             stats["failed_records"] += 1
 
-    async def _ensure_no_running_sync(
+    async def _get_sync_run_by_id(
+        self,
+        session: AsyncSession,
+        *,
+        sync_run_id: UUID,
+    ) -> SyncRun:
+        sync_run = await session.get(SyncRun, sync_run_id)
+        if sync_run is None:
+            raise NotFoundError("Sync run not found.")
+        return sync_run
+
+    async def _ensure_no_active_sync(
         self,
         session: AsyncSession,
         *,
@@ -417,11 +536,67 @@ class SyncService:
             select(SyncRun.id).where(
                 SyncRun.company_id == company_id,
                 SyncRun.integration_id == integration_id,
-                SyncRun.status == SyncRunStatus.RUNNING.value,
+                SyncRun.status.in_(ACTIVE_SYNC_STATUSES),
             )
         )
         if result.scalar_one_or_none() is not None:
+            raise ConflictError(
+                "A sync is already queued or running for this integration."
+            )
+
+    async def _acquire_integration_lock(self, integration_id: UUID) -> str:
+        settings = get_settings()
+        token = secrets.token_urlsafe(32)
+        redis = get_redis_client()
+        acquired = await redis.set(
+            f"sync:integration:{integration_id}",
+            token,
+            ex=settings.sync_lock_ttl_seconds,
+            nx=True,
+        )
+        if not acquired:
             raise ConflictError("A sync is already running for this integration.")
+        return token
+
+    async def _release_integration_lock(
+        self,
+        integration_id: UUID,
+        *,
+        token: str,
+    ) -> None:
+        redis = get_redis_client()
+        key = f"sync:integration:{integration_id}"
+        current_token = await redis.get(key)
+        if current_token == token:
+            await redis.delete(key)
+
+    async def _mark_run_failed_from_exception(
+        self,
+        session: AsyncSession,
+        *,
+        sync_run: SyncRun,
+        integration: Integration,
+        exc: Exception,
+    ) -> None:
+        stats = sync_run.stats_json or _empty_stats()
+        await self._record_row_error(
+            session,
+            company_id=sync_run.company_id,
+            sync_run=sync_run,
+            entity_type=SyncErrorEntityType.PROVIDER.value,
+            external_id=None,
+            exc=exc,
+            raw_payload_json={},
+        )
+        stats["failed_records"] = int(stats.get("failed_records", 0)) + 1
+        self._finish_run(
+            sync_run,
+            integration=integration,
+            status=SyncRunStatus.FAILED.value,
+            stats=stats,
+            error_summary=str(exc) or exc.__class__.__name__,
+        )
+        integration.status = IntegrationStatus.ERROR.value
 
     async def _upsert_customer(
         self,
@@ -784,10 +959,120 @@ class SyncService:
         finished_at = utc_now()
         sync_run.status = status
         sync_run.finished_at = finished_at
-        sync_run.cursor_after_json = cursor_after or {}
-        sync_run.stats_json = stats
+        sync_run.cursor_after_json = dict(cursor_after or {})
+        sync_run.stats_json = dict(stats)
+        flag_modified(sync_run, "cursor_after_json")
+        flag_modified(sync_run, "stats_json")
         sync_run.error_summary = error_summary
-        integration.last_attempted_sync_at = sync_run.started_at
+        integration.last_attempted_sync_at = sync_run.started_at or finished_at
+
+    async def create_due_scheduled_sync_runs(
+        self,
+        session: AsyncSession,
+    ) -> dict[str, Any]:
+        now = utc_now()
+        result = await session.execute(
+            select(Integration).where(
+                Integration.status == IntegrationStatus.ACTIVE.value,
+                Integration.deleted_at.is_(None),
+            )
+        )
+        integrations = list(result.scalars().all())
+        queued: list[SyncRun] = []
+        stats: dict[str, Any] = {
+            "checked_integrations": len(integrations),
+            "queued_count": 0,
+            "skipped_not_enabled": 0,
+            "skipped_not_due": 0,
+            "skipped_active_sync": 0,
+        }
+        for integration in integrations:
+            settings_json = integration.settings_json or {}
+            if settings_json.get("scheduled_sync_enabled") is not True:
+                stats["skipped_not_enabled"] += 1
+                continue
+
+            frequency_minutes = self._sync_frequency_minutes(settings_json)
+            if not self._scheduled_sync_due(
+                integration,
+                now=now,
+                frequency_minutes=frequency_minutes,
+            ):
+                stats["skipped_not_due"] += 1
+                continue
+
+            if await self._has_active_sync(
+                session,
+                company_id=integration.company_id,
+                integration_id=integration.id,
+            ):
+                stats["skipped_active_sync"] += 1
+                continue
+
+            sync_run = SyncRun(
+                company_id=integration.company_id,
+                integration_id=integration.id,
+                sync_type=SyncType.SCHEDULED.value,
+                status=SyncRunStatus.QUEUED.value,
+                task_id=self.new_task_id(),
+                enqueued_at=now,
+                started_at=None,
+                cursor_before_json=integration.sync_cursor_json or {},
+                cursor_after_json={},
+                stats_json=_empty_stats(),
+                created_by_user_id=None,
+            )
+            session.add(sync_run)
+            integration.last_scheduled_sync_at = now
+            integration.next_sync_at = now + timedelta(minutes=frequency_minutes)
+            queued.append(sync_run)
+            stats["queued_count"] += 1
+
+        await session.flush()
+        stats["queued_sync_runs"] = [
+            {"sync_run_id": str(sync_run.id), "task_id": sync_run.task_id}
+            for sync_run in queued
+        ]
+        return stats
+
+    async def _has_active_sync(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID,
+        integration_id: UUID,
+    ) -> bool:
+        result = await session.execute(
+            select(SyncRun.id).where(
+                SyncRun.company_id == company_id,
+                SyncRun.integration_id == integration_id,
+                SyncRun.status.in_(ACTIVE_SYNC_STATUSES),
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    def _sync_frequency_minutes(self, settings_json: dict[str, Any]) -> int:
+        raw_value = settings_json.get("sync_frequency_minutes")
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return 360
+        return max(value, 1)
+
+    def _scheduled_sync_due(
+        self,
+        integration: Integration,
+        *,
+        now: datetime,
+        frequency_minutes: int,
+    ) -> bool:
+        if integration.next_sync_at is not None:
+            return ensure_timezone_aware(integration.next_sync_at) <= now
+        if integration.last_scheduled_sync_at is None:
+            return True
+        return ensure_timezone_aware(integration.last_scheduled_sync_at) + timedelta(
+            minutes=frequency_minutes
+        ) <= now
 
     async def list_sync_runs(
         self,
@@ -818,7 +1103,7 @@ class SyncService:
             select(func.count()).select_from(select(SyncRun.id).where(*filters).subquery())
         )
         result = await session.execute(
-            base_query.order_by(SyncRun.started_at.desc())
+            base_query.order_by(SyncRun.created_at.desc())
             .limit(pagination.limit)
             .offset(pagination.offset)
         )

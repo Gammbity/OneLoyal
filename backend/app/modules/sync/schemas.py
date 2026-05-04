@@ -5,13 +5,21 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 
+class SyncEnqueueResponse(BaseModel):
+    sync_run_id: UUID
+    task_id: str | None
+    status: str
+
+
 class SyncRunResponse(BaseModel):
     id: UUID
     company_id: UUID
     integration_id: UUID
     sync_type: str
     status: str
-    started_at: datetime
+    task_id: str | None
+    enqueued_at: datetime | None
+    started_at: datetime | None
     finished_at: datetime | None
     cursor_before_json: dict[str, Any]
     cursor_after_json: dict[str, Any]

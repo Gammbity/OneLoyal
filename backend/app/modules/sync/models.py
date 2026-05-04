@@ -20,6 +20,7 @@ class SyncType(StrEnum):
 
 
 class SyncRunStatus(StrEnum):
+    QUEUED = "queued"
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
@@ -45,6 +46,8 @@ class SyncRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_sync_runs_company_id", "company_id"),
         Index("ix_sync_runs_integration_id", "integration_id"),
         Index("ix_sync_runs_status", "status"),
+        Index("ix_sync_runs_task_id", "task_id"),
+        Index("ix_sync_runs_enqueued_at", "enqueued_at"),
         Index("ix_sync_runs_started_at", "started_at"),
     )
 
@@ -59,12 +62,13 @@ class SyncRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sync_type: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(
         String(32),
-        default=SyncRunStatus.RUNNING.value,
+        default=SyncRunStatus.QUEUED.value,
         nullable=False,
     )
-    started_at: Mapped[datetime] = mapped_column(
+    task_id: Mapped[str | None] = mapped_column(String(255))
+    enqueued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
-        nullable=False,
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cursor_before_json: Mapped[dict[str, Any]] = mapped_column(

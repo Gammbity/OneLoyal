@@ -34,6 +34,7 @@ class Integration(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
         Index("ix_integrations_company_id", "company_id"),
         Index("ix_integrations_company_id_provider", "company_id", "provider"),
         Index("ix_integrations_company_id_status", "company_id", "status"),
+        Index("ix_integrations_next_sync_at", "next_sync_at"),
     )
 
     company_id: Mapped[UUID] = mapped_column(
@@ -58,6 +59,10 @@ class Integration(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     last_successful_sync_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    last_scheduled_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    next_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sync_cursor_json: Mapped[dict[str, Any]] = mapped_column(
         JSON,
         default=dict,

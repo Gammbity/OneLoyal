@@ -30,6 +30,8 @@ class IntegrationResponse(BaseModel):
     settings_json: dict[str, Any]
     last_attempted_sync_at: datetime | None
     last_successful_sync_at: datetime | None
+    last_scheduled_sync_at: datetime | None
+    next_sync_at: datetime | None
     sync_cursor_json: dict[str, Any]
     has_active_credentials: bool = False
     created_at: datetime

@@ -14,7 +14,7 @@ from app.modules.integrations.schemas import (
     IntegrationUpdateRequest,
 )
 from app.modules.integrations.service import integration_service
-from app.modules.sync.schemas import SyncRunResponse
+from app.modules.sync.schemas import SyncEnqueueResponse
 from app.modules.sync.service import sync_service
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -129,17 +129,25 @@ async def test_integration(
     )
 
 
-@router.post("/{integration_id}/sync", response_model=SyncRunResponse)
+@router.post("/{integration_id}/sync", response_model=SyncEnqueueResponse)
 async def sync_integration(
     integration_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
-) -> SyncRunResponse:
-    sync_run = await sync_service.sync_integration(
+) -> SyncEnqueueResponse:
+    sync_run = await sync_service.create_sync_run(
         session,
         company_id=current_user.user.company_id,
         integration_id=integration_id,
         created_by_user_id=current_user.user.id,
     )
     await session.commit()
-    return SyncRunResponse.model_validate(sync_run)
+    task_id = sync_service.publish_sync_run(sync_run.id, task_id=sync_run.task_id)
+    if sync_run.task_id != task_id:
+        sync_run.task_id = task_id
+        await session.commit()
+    return SyncEnqueueResponse(
+        sync_run_id=sync_run.id,
+        task_id=sync_run.task_id,
+        status=sync_run.status,
+    )
