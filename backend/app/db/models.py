@@ -8,6 +8,7 @@ from app.modules.billing.models import (
     UsageCounter,
 )
 from app.modules.campaigns.models import Campaign, GiftTier
+from app.modules.claims.models import RewardClaim
 from app.modules.companies.models import Company, CompanySettings
 from app.modules.customers.models import (
     Customer,
@@ -39,6 +40,7 @@ __all__ = [
     "IntegrationCredential",
     "MagicLinkToken",
     "Plan",
+    "RewardClaim",
     "SaleRecord",
     "SyncError",
     "SyncRun",

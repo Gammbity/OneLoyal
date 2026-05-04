@@ -5,6 +5,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.modules.claims.schemas import (
+    PortalRewardClaimCreateRequest,
+    RewardClaimResponse,
+)
+from app.modules.claims.service import reward_claim_service
 from app.modules.companies.schemas import CompanyResponse
 from app.modules.customers.schemas import CustomerResponse
 from app.modules.portal.dependencies import get_portal_context
@@ -115,3 +120,69 @@ async def list_portal_purchase_history(
         PortalPurchaseHistoryItem.model_validate(sale_record)
         for sale_record in sale_records
     ]
+
+
+@router.post(
+    "/campaigns/{campaign_id}/claims",
+    response_model=RewardClaimResponse,
+    status_code=201,
+)
+async def create_portal_reward_claim(
+    campaign_id: UUID,
+    data: PortalRewardClaimCreateRequest,
+    context: Annotated[PortalContext, Depends(get_portal_context)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> RewardClaimResponse:
+    claim = await reward_claim_service.create_claim(
+        session,
+        company_id=context.company_id,
+        campaign_id=campaign_id,
+        customer_id=context.customer_id,
+        data=data,
+    )
+    await session.commit()
+    return RewardClaimResponse.model_validate(claim)
+
+
+@router.get("/claims", response_model=list[RewardClaimResponse])
+async def list_portal_reward_claims(
+    context: Annotated[PortalContext, Depends(get_portal_context)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> list[RewardClaimResponse]:
+    claims = await reward_claim_service.list_portal_claims(
+        session,
+        company_id=context.company_id,
+        customer_id=context.customer_id,
+    )
+    return [RewardClaimResponse.model_validate(claim) for claim in claims]
+
+
+@router.get("/claims/{claim_id}", response_model=RewardClaimResponse)
+async def get_portal_reward_claim(
+    claim_id: UUID,
+    context: Annotated[PortalContext, Depends(get_portal_context)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> RewardClaimResponse:
+    claim = await reward_claim_service.get_portal_claim(
+        session,
+        company_id=context.company_id,
+        customer_id=context.customer_id,
+        claim_id=claim_id,
+    )
+    return RewardClaimResponse.model_validate(claim)
+
+
+@router.post("/claims/{claim_id}/cancel", response_model=RewardClaimResponse)
+async def cancel_portal_reward_claim(
+    claim_id: UUID,
+    context: Annotated[PortalContext, Depends(get_portal_context)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> RewardClaimResponse:
+    claim = await reward_claim_service.cancel_claim(
+        session,
+        company_id=context.company_id,
+        customer_id=context.customer_id,
+        claim_id=claim_id,
+    )
+    await session.commit()
+    return RewardClaimResponse.model_validate(claim)
