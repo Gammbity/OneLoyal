@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     import_max_rows: int = 10000
     import_preview_error_limit: int = 50
     import_allowed_extensions: list[str] = Field(default_factory=lambda: ["csv"])
+    moysklad_base_url: str = "https://api.moysklad.ru/api/remap/1.2"
+    moysklad_timeout_seconds: float = 15.0
+    moysklad_page_limit: int = Field(default=1000, ge=1, le=1000)
+    moysklad_max_retries: int = Field(default=2, ge=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",

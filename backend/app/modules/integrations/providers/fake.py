@@ -22,6 +22,8 @@ def _stable_content_hash(value: Mapping[str, Any]) -> str:
 
 class FakeProvider:
     provider_name = "fake"
+    supports_customers = True
+    supports_sales = True
 
     def __init__(
         self,

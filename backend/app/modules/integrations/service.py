@@ -10,6 +10,7 @@ from app.core.security import decrypt_secret, encrypt_secret
 from app.modules.integrations.models import (
     Integration,
     IntegrationCredential,
+    IntegrationProvider,
     IntegrationStatus,
 )
 from app.modules.integrations.providers.base import (
@@ -46,6 +47,14 @@ class IntegrationService:
             raise ValidationAppError(
                 "Unsupported integration provider.",
                 details={"provider": provider},
+            )
+        if (
+            provider == IntegrationProvider.MOYSKLAD.value
+            and data.credentials_json is None
+        ):
+            raise ValidationAppError(
+                "MoySklad credentials are required.",
+                details={"provider": provider, "field": "credentials_json"},
             )
 
         integration = Integration(

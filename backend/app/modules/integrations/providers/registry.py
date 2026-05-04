@@ -4,8 +4,9 @@ from app.core.errors import ValidationAppError
 from app.modules.integrations.models import Integration
 from app.modules.integrations.providers.base import ERPProvider
 from app.modules.integrations.providers.fake import FakeProvider
+from app.modules.integrations.providers.moysklad import MoySkladProvider
 
-ProviderFactory = type[FakeProvider]
+ProviderFactory = type[FakeProvider] | type[MoySkladProvider]
 
 
 class ProviderRegistry:
@@ -39,3 +40,4 @@ class ProviderRegistry:
 
 provider_registry = ProviderRegistry()
 provider_registry.register(FakeProvider.provider_name, FakeProvider)
+provider_registry.register(MoySkladProvider.provider_name, MoySkladProvider)

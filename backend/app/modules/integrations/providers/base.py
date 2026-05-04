@@ -76,6 +76,9 @@ class ProviderFetchResult[T]:
 
 
 class ERPProvider(Protocol):
+    supports_customers: bool
+    supports_sales: bool
+
     async def test_connection(self) -> ProviderConnectionResult:
         raise NotImplementedError
 

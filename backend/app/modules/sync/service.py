@@ -16,7 +16,11 @@ from app.modules.customers.models import (
     CustomerStatus,
 )
 from app.modules.integrations.models import Integration, IntegrationStatus
-from app.modules.integrations.providers.base import ERPCustomerDTO, ERPSaleDTO
+from app.modules.integrations.providers.base import (
+    ERPCustomerDTO,
+    ERPSaleDTO,
+    ProviderFetchResult,
+)
 from app.modules.integrations.service import integration_service
 from app.modules.progress.service import progress_service
 from app.modules.sales.models import (
@@ -35,7 +39,7 @@ from app.modules.sync.models import (
 )
 
 
-def _empty_stats() -> dict[str, int]:
+def _empty_stats() -> dict[str, Any]:
     return {
         "fetched_customers": 0,
         "created_customers": 0,
@@ -166,62 +170,37 @@ class SyncService:
                 await session.flush()
                 return sync_run
 
-            customer_result = await provider.fetch_customers(
-                cursor=integration.sync_cursor_json or {}
-            )
-            stats["fetched_customers"] = len(customer_result.items)
-            for customer in customer_result.items:
-                try:
-                    created, updated = await self._upsert_customer(
-                        session,
-                        company_id=company_id,
-                        integration=integration,
-                        customer_dto=customer,
-                    )
-                    stats["created_customers"] += int(created)
-                    stats["updated_customers"] += int(updated)
-                except Exception as exc:
-                    await self._record_row_error(
-                        session,
-                        company_id=company_id,
-                        sync_run=sync_run,
-                        entity_type=SyncErrorEntityType.CUSTOMER.value,
-                        external_id=customer.external_id,
-                        exc=exc,
-                        raw_payload_json=customer.raw_payload,
-                    )
-                    stats["failed_records"] += 1
+            cursor_before = integration.sync_cursor_json or {}
+            customer_result = ProviderFetchResult[ERPCustomerDTO](items=[])
+            if getattr(provider, "supports_customers", True):
+                customer_result = await self._sync_customers_from_provider(
+                    session,
+                    company_id=company_id,
+                    integration=integration,
+                    sync_run=sync_run,
+                    provider=provider,
+                    cursor=self._provider_cursor(cursor_before, "customers"),
+                    stats=stats,
+                )
+            else:
+                stats["customers_not_supported"] = True
 
-            sale_result = await provider.fetch_sales(
-                cursor=integration.sync_cursor_json or {}
-            )
-            stats["fetched_sales"] = len(sale_result.items)
+            sale_result = ProviderFetchResult[ERPSaleDTO](items=[])
             affected_customer_ids: set[UUID] = set()
-            for sale in sale_result.items:
-                try:
-                    outcome = await self._upsert_sale_record(
+            if getattr(provider, "supports_sales", True):
+                sale_result, affected_customer_ids = (
+                    await self._sync_sales_from_provider(
                         session,
                         company_id=company_id,
                         integration=integration,
-                        sale_dto=sale,
-                    )
-                    stats["created_sales"] += int(outcome["created"])
-                    stats["updated_sales"] += int(outcome["updated"])
-                    stats["skipped_sales"] += int(outcome["skipped"])
-                    if outcome["affected_customer_id"] is not None:
-                        affected_customer_ids.add(outcome["affected_customer_id"])
-                except Exception as exc:
-                    await self._record_row_error(
-                        session,
-                        company_id=company_id,
                         sync_run=sync_run,
-                        entity_type=SyncErrorEntityType.SALE_RECORD.value,
-                        external_id=sale.external_id,
-                        exc=exc,
-                        raw_payload_json=sale.raw_payload,
+                        provider=provider,
+                        cursor=self._provider_cursor(cursor_before, "sales"),
+                        stats=stats,
                     )
-                    stats["failed_records"] += 1
-                    stats["skipped_sales"] += 1
+                )
+            else:
+                stats["sales_not_supported"] = True
 
             stats["affected_customers"] = len(affected_customer_ids)
             await self._recalculate_progress(
@@ -278,6 +257,113 @@ class SyncService:
             integration.status = IntegrationStatus.ERROR.value
             await session.flush()
             return sync_run
+
+    def _provider_cursor(
+        self,
+        cursor_state: dict[str, Any],
+        section: str,
+    ) -> dict[str, Any]:
+        section_cursor = cursor_state.get(section)
+        if isinstance(section_cursor, dict):
+            return section_cursor
+        return {}
+
+    async def _sync_customers_from_provider(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID,
+        integration: Integration,
+        sync_run: SyncRun,
+        provider: Any,
+        cursor: dict[str, Any],
+        stats: dict[str, Any],
+    ) -> ProviderFetchResult[ERPCustomerDTO]:
+        current_cursor: dict[str, Any] | None = cursor
+        last_result = ProviderFetchResult[ERPCustomerDTO](items=[])
+        while current_cursor is not None:
+            last_result = await provider.fetch_customers(cursor=current_cursor)
+            stats["fetched_customers"] += len(last_result.items)
+            for customer in last_result.items:
+                try:
+                    created, updated = await self._upsert_customer(
+                        session,
+                        company_id=company_id,
+                        integration=integration,
+                        customer_dto=customer,
+                    )
+                    stats["created_customers"] += int(created)
+                    stats["updated_customers"] += int(updated)
+                except Exception as exc:
+                    await self._record_row_error(
+                        session,
+                        company_id=company_id,
+                        sync_run=sync_run,
+                        entity_type=SyncErrorEntityType.CUSTOMER.value,
+                        external_id=customer.external_id,
+                        exc=exc,
+                        raw_payload_json=customer.raw_payload,
+                    )
+                    stats["failed_records"] += 1
+
+            if not last_result.has_more:
+                break
+            current_cursor = last_result.next_cursor
+            if current_cursor is None:
+                break
+
+        return last_result
+
+    async def _sync_sales_from_provider(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID,
+        integration: Integration,
+        sync_run: SyncRun,
+        provider: Any,
+        cursor: dict[str, Any],
+        stats: dict[str, Any],
+    ) -> tuple[ProviderFetchResult[ERPSaleDTO], set[UUID]]:
+        current_cursor: dict[str, Any] | None = cursor
+        last_result = ProviderFetchResult[ERPSaleDTO](items=[])
+        affected_customer_ids: set[UUID] = set()
+        while current_cursor is not None:
+            last_result = await provider.fetch_sales(cursor=current_cursor)
+            stats["fetched_sales"] += len(last_result.items)
+            for sale in last_result.items:
+                try:
+                    outcome = await self._upsert_sale_record(
+                        session,
+                        company_id=company_id,
+                        integration=integration,
+                        sale_dto=sale,
+                    )
+                    stats["created_sales"] += int(outcome["created"])
+                    stats["updated_sales"] += int(outcome["updated"])
+                    stats["skipped_sales"] += int(outcome["skipped"])
+                    if outcome["affected_customer_id"] is not None:
+                        affected_customer_ids.add(outcome["affected_customer_id"])
+                except Exception as exc:
+                    await self._record_row_error(
+                        session,
+                        company_id=company_id,
+                        sync_run=sync_run,
+                        entity_type=SyncErrorEntityType.SALE_RECORD.value,
+                        external_id=sale.external_id,
+                        exc=exc,
+                        raw_payload_json=sale.raw_payload,
+                    )
+                    stats["failed_records"] += 1
+                    stats["skipped_sales"] += 1
+
+            if not last_result.has_more:
+                break
+            current_cursor = last_result.next_cursor
+            if current_cursor is None:
+                break
+
+        return last_result, affected_customer_ids
 
     async def _ensure_no_running_sync(
         self,
@@ -549,7 +635,7 @@ class SyncService:
         company_id: UUID,
         sync_run: SyncRun,
         customer_ids: Iterable[UUID],
-        stats: dict[str, int],
+        stats: dict[str, Any],
     ) -> None:
         customer_ids_list = list(customer_ids)
         if not customer_ids_list:
@@ -650,7 +736,7 @@ class SyncService:
         *,
         integration: Integration,
         status: str,
-        stats: dict[str, int],
+        stats: dict[str, Any],
         cursor_after: dict[str, Any] | None = None,
         error_summary: str | None,
     ) -> None:

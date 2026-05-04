@@ -18,10 +18,11 @@ This scaffold includes only the backend foundation:
 - request ID middleware
 - standardized error responses
 - password hashing, JWT, and encryption utility foundations
+- provider-based integrations with FakeProvider and MoySklad customer sync foundation
 - Docker and Docker Compose
 - pytest smoke tests
 
-Business modules, auth, ERP integrations, reward calculation, and frontend code are intentionally not implemented yet.
+Frontend code and production ERP sales-document sync are intentionally not implemented yet.
 
 ## Project Structure
 
@@ -145,3 +146,19 @@ Run Celery through Docker Compose:
 ```bash
 docker compose up worker
 ```
+
+## MoySklad Settings
+
+MoySklad integrations use encrypted credentials from the integration API. V1 supports
+Basic Auth credentials in `credentials_json`:
+
+```json
+{
+  "username": "login",
+  "password": "password"
+}
+```
+
+Runtime tuning is controlled with `MOYSKLAD_BASE_URL`,
+`MOYSKLAD_TIMEOUT_SECONDS`, `MOYSKLAD_PAGE_LIMIT`, and
+`MOYSKLAD_MAX_RETRIES`.
