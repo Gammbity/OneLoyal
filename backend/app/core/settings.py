@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     portal_access_token_expire_hours: int = 12
     magic_link_default_expire_days: int = 30
     portal_base_url: str | None = None
+    import_max_rows: int = 10000
+    import_preview_error_limit: int = 50
+    import_allowed_extensions: list[str] = Field(default_factory=lambda: ["csv"])
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -59,6 +62,15 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: Any) -> Any:
+        return cls._parse_string_list(value)
+
+    @field_validator("import_allowed_extensions", mode="before")
+    @classmethod
+    def parse_import_allowed_extensions(cls, value: Any) -> Any:
+        return cls._parse_string_list(value)
+
+    @classmethod
+    def _parse_string_list(cls, value: Any) -> Any:
         if isinstance(value, str):
             value = value.strip()
             if not value:
