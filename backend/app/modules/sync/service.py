@@ -20,6 +20,7 @@ from app.modules.integrations.providers.base import (
     ERPCustomerDTO,
     ERPSaleDTO,
     ProviderFetchResult,
+    ProviderRowError,
 )
 from app.modules.integrations.service import integration_service
 from app.modules.progress.service import progress_service
@@ -284,6 +285,14 @@ class SyncService:
         while current_cursor is not None:
             last_result = await provider.fetch_customers(cursor=current_cursor)
             stats["fetched_customers"] += len(last_result.items)
+            await self._record_provider_fetch_errors(
+                session,
+                company_id=company_id,
+                sync_run=sync_run,
+                entity_type=SyncErrorEntityType.CUSTOMER.value,
+                errors=last_result.errors,
+                stats=stats,
+            )
             for customer in last_result.items:
                 try:
                     created, updated = await self._upsert_customer(
@@ -331,6 +340,15 @@ class SyncService:
         while current_cursor is not None:
             last_result = await provider.fetch_sales(cursor=current_cursor)
             stats["fetched_sales"] += len(last_result.items)
+            await self._record_provider_fetch_errors(
+                session,
+                company_id=company_id,
+                sync_run=sync_run,
+                entity_type=SyncErrorEntityType.SALE_RECORD.value,
+                errors=last_result.errors,
+                stats=stats,
+            )
+            stats["skipped_sales"] += len(last_result.errors)
             for sale in last_result.items:
                 try:
                     outcome = await self._upsert_sale_record(
@@ -364,6 +382,29 @@ class SyncService:
                 break
 
         return last_result, affected_customer_ids
+
+    async def _record_provider_fetch_errors(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID,
+        sync_run: SyncRun,
+        entity_type: str,
+        errors: list[ProviderRowError],
+        stats: dict[str, Any],
+    ) -> None:
+        for error in errors:
+            await self._add_sync_error(
+                session,
+                company_id=company_id,
+                sync_run=sync_run,
+                entity_type=entity_type,
+                external_id=error.external_id,
+                error_code=error.error_code,
+                message=error.message,
+                raw_payload_json=error.raw_payload,
+            )
+            stats["failed_records"] += 1
 
     async def _ensure_no_running_sync(
         self,

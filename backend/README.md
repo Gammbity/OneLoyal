@@ -18,11 +18,11 @@ This scaffold includes only the backend foundation:
 - request ID middleware
 - standardized error responses
 - password hashing, JWT, and encryption utility foundations
-- provider-based integrations with FakeProvider and MoySklad customer sync foundation
+- provider-based integrations with FakeProvider and MoySklad customer/demand sync foundation
 - Docker and Docker Compose
 - pytest smoke tests
 
-Frontend code and production ERP sales-document sync are intentionally not implemented yet.
+Frontend code, scheduled ERP sync, and MoySklad returns/refunds sync are intentionally not implemented yet.
 
 ## Project Structure
 
@@ -150,7 +150,8 @@ docker compose up worker
 ## MoySklad Settings
 
 MoySklad integrations use encrypted credentials from the integration API. V1 supports
-Basic Auth credentials in `credentials_json`:
+Basic Auth credentials in `credentials_json` and syncs counterparties plus demand
+documents (`/entity/demand`) at document-total level:
 
 ```json
 {

@@ -143,6 +143,18 @@ class MoySkladClient:
             params={"offset": offset, "limit": limit},
         )
 
+    async def list_demands(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        filters: list[str] | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"offset": offset, "limit": limit}
+        if filters:
+            params["filter"] = ";".join(filters)
+        return await self.get("/entity/demand", params=params)
+
     def _api_error(self, response: httpx.Response) -> MoySkladAPIError:
         details: dict[str, Any] = {
             "status_code": response.status_code,

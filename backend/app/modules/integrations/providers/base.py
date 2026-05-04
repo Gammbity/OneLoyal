@@ -68,11 +68,20 @@ class ProviderConnectionResult:
 
 
 @dataclass(frozen=True)
+class ProviderRowError:
+    external_id: str | None
+    error_code: str
+    message: str
+    raw_payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ProviderFetchResult[T]:
     items: list[T]
     next_cursor: dict[str, Any] | None = None
     has_more: bool = False
     stats: dict[str, Any] = field(default_factory=dict)
+    errors: list[ProviderRowError] = field(default_factory=list)
 
 
 class ERPProvider(Protocol):
