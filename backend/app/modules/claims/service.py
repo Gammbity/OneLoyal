@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.common.datetime import utc_now
 from app.common.pagination import PaginationParams
 from app.core.errors import ConflictError, NotFoundError
+from app.modules.audit.context import AuditContext
 from app.modules.campaigns.models import Campaign, CampaignStatus, GiftTier
 from app.modules.claims.models import (
     ACTIVE_REWARD_CLAIM_STATUSES,
@@ -18,6 +19,7 @@ from app.modules.claims.schemas import (
     RewardClaimCreateRequest,
 )
 from app.modules.customers.models import Customer
+from app.modules.events.service import domain_event_service
 from app.modules.progress.models import CustomerCampaignProgress
 
 
@@ -187,6 +189,7 @@ class RewardClaimService:
         data: RewardClaimCreateRequest | PortalRewardClaimCreateRequest,
         customer_id: UUID | None = None,
         campaign_id: UUID | None = None,
+        event_context: AuditContext | None = None,
     ) -> RewardClaim:
         claim_campaign_id = campaign_id or data.campaign_id
         claim_customer_id = customer_id or data.customer_id
@@ -227,6 +230,21 @@ class RewardClaimService:
         claim.gift_tier = tier
         session.add(claim)
         await session.flush()
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="reward_claim_created",
+            aggregate_type="reward_claim",
+            aggregate_id=claim.id,
+            customer_id=claim.customer_id,
+            campaign_id=claim.campaign_id,
+            gift_tier_id=claim.gift_tier_id,
+            payload_json={
+                "claim_id": str(claim.id),
+                "status": claim.status,
+            },
+            context=event_context,
+        )
         return claim
 
     async def list_claims(
@@ -324,6 +342,7 @@ class RewardClaimService:
         claim_id: UUID,
         decided_by_user_id: UUID,
         admin_comment: str | None = None,
+        event_context: AuditContext | None = None,
     ) -> RewardClaim:
         claim = await self._get_claim(session, company_id=company_id, claim_id=claim_id)
         if claim.status != RewardClaimStatus.PENDING.value:
@@ -342,6 +361,22 @@ class RewardClaimService:
         claim.decided_at = utc_now()
         claim.gift_tier = tier
         await session.flush()
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="reward_claim_approved",
+            aggregate_type="reward_claim",
+            aggregate_id=claim.id,
+            customer_id=claim.customer_id,
+            campaign_id=claim.campaign_id,
+            gift_tier_id=claim.gift_tier_id,
+            actor_user_id=decided_by_user_id,
+            payload_json={
+                "claim_id": str(claim.id),
+                "status": claim.status,
+            },
+            context=event_context,
+        )
         return claim
 
     async def reject_claim(
@@ -352,6 +387,7 @@ class RewardClaimService:
         claim_id: UUID,
         decided_by_user_id: UUID,
         admin_comment: str | None = None,
+        event_context: AuditContext | None = None,
     ) -> RewardClaim:
         claim = await self._get_claim(session, company_id=company_id, claim_id=claim_id)
         if claim.status not in {
@@ -374,6 +410,22 @@ class RewardClaimService:
         claim.decided_by_user_id = decided_by_user_id
         claim.decided_at = utc_now()
         await session.flush()
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="reward_claim_rejected",
+            aggregate_type="reward_claim",
+            aggregate_id=claim.id,
+            customer_id=claim.customer_id,
+            campaign_id=claim.campaign_id,
+            gift_tier_id=claim.gift_tier_id,
+            actor_user_id=decided_by_user_id,
+            payload_json={
+                "claim_id": str(claim.id),
+                "status": claim.status,
+            },
+            context=event_context,
+        )
         return claim
 
     async def fulfill_claim(
@@ -384,6 +436,7 @@ class RewardClaimService:
         claim_id: UUID,
         fulfilled_by_user_id: UUID,
         admin_comment: str | None = None,
+        event_context: AuditContext | None = None,
     ) -> RewardClaim:
         claim = await self._get_claim(session, company_id=company_id, claim_id=claim_id)
         if claim.status != RewardClaimStatus.APPROVED.value:
@@ -402,6 +455,22 @@ class RewardClaimService:
         claim.fulfilled_at = utc_now()
         claim.gift_tier = tier
         await session.flush()
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="reward_claim_fulfilled",
+            aggregate_type="reward_claim",
+            aggregate_id=claim.id,
+            customer_id=claim.customer_id,
+            campaign_id=claim.campaign_id,
+            gift_tier_id=claim.gift_tier_id,
+            actor_user_id=fulfilled_by_user_id,
+            payload_json={
+                "claim_id": str(claim.id),
+                "status": claim.status,
+            },
+            context=event_context,
+        )
         return claim
 
     async def cancel_claim(
@@ -413,6 +482,7 @@ class RewardClaimService:
         cancelled_by_user_id: UUID | None = None,
         customer_id: UUID | None = None,
         admin_comment: str | None = None,
+        event_context: AuditContext | None = None,
     ) -> RewardClaim:
         claim = await self._get_claim(session, company_id=company_id, claim_id=claim_id)
         if customer_id is not None and claim.customer_id != customer_id:
@@ -439,6 +509,23 @@ class RewardClaimService:
         claim.cancelled_by_user_id = cancelled_by_user_id
         claim.cancelled_at = utc_now()
         await session.flush()
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="reward_claim_cancelled",
+            aggregate_type="reward_claim",
+            aggregate_id=claim.id,
+            customer_id=claim.customer_id,
+            campaign_id=claim.campaign_id,
+            gift_tier_id=claim.gift_tier_id,
+            actor_user_id=cancelled_by_user_id,
+            actor_customer_id=customer_id,
+            payload_json={
+                "claim_id": str(claim.id),
+                "status": claim.status,
+            },
+            context=event_context,
+        )
         return claim
 
 

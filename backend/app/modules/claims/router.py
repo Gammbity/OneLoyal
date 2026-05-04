@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import (
@@ -10,6 +10,8 @@ from app.common.pagination import (
     create_paginated_response,
 )
 from app.db.session import get_db
+from app.modules.audit.context import audit_context_from_request
+from app.modules.audit.service import audit_log_service
 from app.modules.auth.dependencies import require_company_user, require_owner_or_admin
 from app.modules.auth.service import AuthenticatedUser
 from app.modules.claims.schemas import (
@@ -67,11 +69,32 @@ async def create_reward_claim(
     data: RewardClaimCreateRequest,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> RewardClaimResponse:
+    event_context = audit_context_from_request(
+        request,
+        actor_user_id=current_user.user.id,
+        actor_type="user",
+    )
     claim = await reward_claim_service.create_claim(
         session,
         company_id=current_user.user.company_id,
         data=data,
+        event_context=event_context,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="reward_claim.created",
+        entity_type="reward_claim",
+        entity_id=claim.id,
+        context=event_context,
+        after_json={
+            "status": claim.status,
+            "campaign_id": str(claim.campaign_id),
+            "customer_id": str(claim.customer_id),
+            "gift_tier_id": str(claim.gift_tier_id),
+        },
     )
     await session.commit()
     return RewardClaimResponse.model_validate(claim)
@@ -83,13 +106,34 @@ async def approve_reward_claim(
     data: RewardClaimActionRequest,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> RewardClaimResponse:
+    event_context = audit_context_from_request(
+        request,
+        actor_user_id=current_user.user.id,
+        actor_type="user",
+    )
     claim = await reward_claim_service.approve_claim(
         session,
         company_id=current_user.user.company_id,
         claim_id=claim_id,
         decided_by_user_id=current_user.user.id,
         admin_comment=data.admin_comment,
+        event_context=event_context,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="reward_claim.approved",
+        entity_type="reward_claim",
+        entity_id=claim.id,
+        context=event_context,
+        after_json={
+            "status": claim.status,
+            "campaign_id": str(claim.campaign_id),
+            "customer_id": str(claim.customer_id),
+            "gift_tier_id": str(claim.gift_tier_id),
+        },
     )
     await session.commit()
     return RewardClaimResponse.model_validate(claim)
@@ -101,13 +145,34 @@ async def reject_reward_claim(
     data: RewardClaimActionRequest,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> RewardClaimResponse:
+    event_context = audit_context_from_request(
+        request,
+        actor_user_id=current_user.user.id,
+        actor_type="user",
+    )
     claim = await reward_claim_service.reject_claim(
         session,
         company_id=current_user.user.company_id,
         claim_id=claim_id,
         decided_by_user_id=current_user.user.id,
         admin_comment=data.admin_comment,
+        event_context=event_context,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="reward_claim.rejected",
+        entity_type="reward_claim",
+        entity_id=claim.id,
+        context=event_context,
+        after_json={
+            "status": claim.status,
+            "campaign_id": str(claim.campaign_id),
+            "customer_id": str(claim.customer_id),
+            "gift_tier_id": str(claim.gift_tier_id),
+        },
     )
     await session.commit()
     return RewardClaimResponse.model_validate(claim)
@@ -119,13 +184,34 @@ async def fulfill_reward_claim(
     data: RewardClaimActionRequest,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> RewardClaimResponse:
+    event_context = audit_context_from_request(
+        request,
+        actor_user_id=current_user.user.id,
+        actor_type="user",
+    )
     claim = await reward_claim_service.fulfill_claim(
         session,
         company_id=current_user.user.company_id,
         claim_id=claim_id,
         fulfilled_by_user_id=current_user.user.id,
         admin_comment=data.admin_comment,
+        event_context=event_context,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="reward_claim.fulfilled",
+        entity_type="reward_claim",
+        entity_id=claim.id,
+        context=event_context,
+        after_json={
+            "status": claim.status,
+            "campaign_id": str(claim.campaign_id),
+            "customer_id": str(claim.customer_id),
+            "gift_tier_id": str(claim.gift_tier_id),
+        },
     )
     await session.commit()
     return RewardClaimResponse.model_validate(claim)
@@ -137,13 +223,34 @@ async def cancel_reward_claim(
     data: RewardClaimActionRequest,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> RewardClaimResponse:
+    event_context = audit_context_from_request(
+        request,
+        actor_user_id=current_user.user.id,
+        actor_type="user",
+    )
     claim = await reward_claim_service.cancel_claim(
         session,
         company_id=current_user.user.company_id,
         claim_id=claim_id,
         cancelled_by_user_id=current_user.user.id,
         admin_comment=data.admin_comment,
+        event_context=event_context,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="reward_claim.cancelled",
+        entity_type="reward_claim",
+        entity_id=claim.id,
+        context=event_context,
+        after_json={
+            "status": claim.status,
+            "campaign_id": str(claim.campaign_id),
+            "customer_id": str(claim.customer_id),
+            "gift_tier_id": str(claim.gift_tier_id),
+        },
     )
     await session.commit()
     return RewardClaimResponse.model_validate(claim)

@@ -15,12 +15,14 @@ from app.common.datetime import utc_now
 from app.common.pagination import PaginationParams
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.core.settings import get_settings
+from app.modules.audit.context import AuditContext
 from app.modules.campaigns.models import Campaign, CampaignStatus
 from app.modules.customers.models import (
     Customer,
     CustomerExternalRef,
     CustomerStatus,
 )
+from app.modules.events.service import domain_event_service
 from app.modules.imports.models import (
     ImportBatch,
     ImportBatchStatus,
@@ -470,6 +472,7 @@ class ImportService:
         *,
         company_id: UUID,
         import_batch_id: UUID,
+        event_context: AuditContext | None = None,
     ) -> ImportBatch:
         batch = await self.get_batch(
             session,
@@ -528,6 +531,7 @@ class ImportService:
             session,
             company_id=company_id,
             customer_ids=affected_customer_ids,
+            event_context=event_context,
         )
         batch.status = ImportBatchStatus.COMMITTED.value
         batch.committed_at = utc_now()
@@ -536,6 +540,21 @@ class ImportService:
         batch.stats_json = {**(batch.stats_json or {}), "commit": stats}
         batch.error_summary = (
             "Import committed with skipped rows." if batch.skipped_rows else None
+        )
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="import_committed",
+            aggregate_type="import_batch",
+            aggregate_id=batch.id,
+            payload_json={
+                "import_batch_id": str(batch.id),
+                "status": batch.status,
+                "committed_rows": batch.committed_rows,
+                "skipped_rows": batch.skipped_rows,
+                "stats": stats,
+            },
+            context=event_context,
         )
         await session.flush()
         return batch
@@ -774,6 +793,7 @@ class ImportService:
         *,
         company_id: UUID,
         customer_ids: set[UUID],
+        event_context: AuditContext | None = None,
     ) -> int:
         if not customer_ids:
             return 0
@@ -791,6 +811,7 @@ class ImportService:
                 company_id=company_id,
                 campaign_id=campaign_id,
                 customer_ids=list(customer_ids),
+                event_context=event_context,
             )
             recalculated_count += stats.recalculated_count
         return recalculated_count

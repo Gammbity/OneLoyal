@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import (
@@ -10,6 +10,8 @@ from app.common.pagination import (
     create_paginated_response,
 )
 from app.db.session import get_db
+from app.modules.audit.context import audit_context_from_request
+from app.modules.audit.service import audit_log_service
 from app.modules.auth.dependencies import require_company_user, require_owner_or_admin
 from app.modules.auth.service import AuthenticatedUser
 from app.modules.customers.schemas import (
@@ -126,12 +128,30 @@ async def create_customer_magic_link(
     customer_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> MagicLinkCreateResponse:
     magic_link = await portal_service.create_magic_link(
         session,
         company_id=current_user.user.company_id,
         customer_id=customer_id,
         created_by_user_id=current_user.user.id,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="magic_link.created",
+        entity_type="magic_link",
+        entity_id=magic_link.token_id,
+        context=audit_context_from_request(
+            request,
+            actor_user_id=current_user.user.id,
+            actor_type="user",
+        ),
+        after_json={
+            "customer_id": str(customer_id),
+            "token_id": str(magic_link.token_id),
+            "expires_at": magic_link.expires_at.isoformat(),
+        },
     )
     await session.commit()
     return magic_link
@@ -163,12 +183,32 @@ async def revoke_customer_magic_link(
     token_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> MagicLinkListItem:
     magic_link = await portal_service.revoke_magic_link(
         session,
         company_id=current_user.user.company_id,
         customer_id=customer_id,
         token_id=token_id,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="magic_link.revoked",
+        entity_type="magic_link",
+        entity_id=magic_link.id,
+        context=audit_context_from_request(
+            request,
+            actor_user_id=current_user.user.id,
+            actor_type="user",
+        ),
+        after_json={
+            "customer_id": str(customer_id),
+            "token_id": str(magic_link.id),
+            "revoked_at": magic_link.revoked_at.isoformat()
+            if magic_link.revoked_at
+            else None,
+        },
     )
     await session.commit()
     return MagicLinkListItem.model_validate(magic_link)

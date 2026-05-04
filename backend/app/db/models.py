@@ -1,6 +1,7 @@
 """Import SQLAlchemy models so Alembic can discover metadata."""
 
 from app.modules.auth.models import UserSession
+from app.modules.audit.models import AuditLog
 from app.modules.billing.models import (
     CompanySubscription,
     CompanyUsageLimit,
@@ -15,6 +16,7 @@ from app.modules.customers.models import (
     CustomerAssignment,
     CustomerExternalRef,
 )
+from app.modules.events.models import DomainEvent
 from app.modules.imports.models import ImportBatch, ImportRow
 from app.modules.integrations.models import Integration, IntegrationCredential
 from app.modules.portal.models import MagicLinkToken
@@ -29,10 +31,12 @@ __all__ = [
     "CompanySettings",
     "CompanySubscription",
     "CompanyUsageLimit",
+    "AuditLog",
     "Customer",
     "CustomerAssignment",
     "CustomerCampaignProgress",
     "CustomerExternalRef",
+    "DomainEvent",
     "GiftTier",
     "ImportBatch",
     "ImportRow",

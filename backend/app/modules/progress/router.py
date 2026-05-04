@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import (
@@ -10,6 +10,7 @@ from app.common.pagination import (
     create_paginated_response,
 )
 from app.db.session import get_db
+from app.modules.audit.context import audit_context_from_request
 from app.modules.auth.dependencies import require_company_user, require_owner_or_admin
 from app.modules.auth.service import AuthenticatedUser
 from app.modules.progress.schemas import (
@@ -28,12 +29,19 @@ router = APIRouter(prefix="/progress", tags=["progress"])
 async def recalculate_campaign_progress(
     campaign_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> RecalculateCampaignResponse:
+    event_context = audit_context_from_request(
+        request,
+        actor_user_id=current_user.user.id,
+        actor_type="user",
+    )
     stats = await progress_service.recalculate_campaign_progress(
         session,
         company_id=current_user.user.company_id,
         campaign_id=campaign_id,
+        event_context=event_context,
     )
     await session.commit()
     return RecalculateCampaignResponse(
@@ -53,13 +61,20 @@ async def recalculate_customer_progress(
     campaign_id: UUID,
     customer_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> CustomerCampaignProgressResponse:
+    event_context = audit_context_from_request(
+        request,
+        actor_user_id=current_user.user.id,
+        actor_type="user",
+    )
     progress = await progress_service.calculate_customer_progress(
         session,
         company_id=current_user.user.company_id,
         campaign_id=campaign_id,
         customer_id=customer_id,
+        event_context=event_context,
     )
     await session.commit()
     return CustomerCampaignProgressResponse.model_validate(progress)

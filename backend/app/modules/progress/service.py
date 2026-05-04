@@ -9,8 +9,10 @@ from sqlalchemy.orm import selectinload
 from app.common.datetime import utc_now
 from app.common.pagination import PaginationParams
 from app.core.errors import NotFoundError, ValidationAppError
+from app.modules.audit.context import AuditContext
 from app.modules.campaigns.models import Campaign, GiftTier
 from app.modules.customers.models import Customer
+from app.modules.events.service import domain_event_service
 from app.modules.progress.models import CustomerCampaignProgress
 from app.modules.sales.models import (
     PaymentStatus,
@@ -311,6 +313,7 @@ class ProgressService:
         total_amount_minor: int,
         tier_result: TierResult,
         stats: dict,
+        event_context: AuditContext | None = None,
     ) -> CustomerCampaignProgress:
         result = await session.execute(
             select(CustomerCampaignProgress).where(
@@ -320,6 +323,23 @@ class ProgressService:
             )
         )
         progress = result.scalar_one_or_none()
+        before_snapshot: dict | None = None
+        previous_current_tier_id: UUID | None = None
+        if progress is not None:
+            previous_current_tier_id = progress.current_tier_id
+            previous_next_tier_id = progress.next_tier_id
+            before_snapshot = {
+                "total_amount_minor": progress.total_amount_minor,
+                "current_tier_id": str(previous_current_tier_id)
+                if previous_current_tier_id
+                else None,
+                "next_tier_id": str(previous_next_tier_id)
+                if previous_next_tier_id
+                else None,
+                "amount_left_minor": progress.amount_left_minor,
+                "progress_percent_basis_points": progress.progress_percent_basis_points,
+                "calculated_at": progress.calculated_at.isoformat(),
+            }
         now = utc_now()
         stats["no_tiers"] = tier_result.no_tiers
 
@@ -353,6 +373,82 @@ class ProgressService:
         progress.current_tier = tier_result.current_tier
         progress.next_tier = tier_result.next_tier
         await session.flush()
+
+        after_snapshot = {
+            "total_amount_minor": progress.total_amount_minor,
+            "current_tier_id": str(progress.current_tier_id)
+            if progress.current_tier_id
+            else None,
+            "next_tier_id": str(progress.next_tier_id)
+            if progress.next_tier_id
+            else None,
+            "amount_left_minor": progress.amount_left_minor,
+            "progress_percent_basis_points": progress.progress_percent_basis_points,
+            "calculated_at": progress.calculated_at.isoformat(),
+        }
+
+        should_emit_recalc = before_snapshot is None or any(
+            before_snapshot[field] != after_snapshot[field]
+            for field in ("total_amount_minor", "current_tier_id", "next_tier_id")
+        )
+        if should_emit_recalc:
+            await domain_event_service.emit(
+                session,
+                company_id=company_id,
+                event_type="customer_progress_recalculated",
+                aggregate_type="customer_campaign_progress",
+                aggregate_id=progress.id,
+                customer_id=customer.id,
+                campaign_id=campaign.id,
+                payload_json={
+                    "progress_id": str(progress.id),
+                    "previous": before_snapshot,
+                    "current": after_snapshot,
+                },
+                context=event_context,
+            )
+
+        current_tier_id = progress.current_tier_id
+        if previous_current_tier_id is None and current_tier_id is not None:
+            await domain_event_service.emit(
+                session,
+                company_id=company_id,
+                event_type="reward_tier_reached",
+                aggregate_type="customer_campaign_progress",
+                aggregate_id=progress.id,
+                customer_id=customer.id,
+                campaign_id=campaign.id,
+                gift_tier_id=current_tier_id,
+                payload_json={
+                    "progress_id": str(progress.id),
+                    "previous_tier_id": None,
+                    "current_tier_id": str(current_tier_id),
+                    "total_amount_minor": progress.total_amount_minor,
+                },
+                context=event_context,
+            )
+        elif previous_current_tier_id != current_tier_id:
+            await domain_event_service.emit(
+                session,
+                company_id=company_id,
+                event_type="reward_tier_changed",
+                aggregate_type="customer_campaign_progress",
+                aggregate_id=progress.id,
+                customer_id=customer.id,
+                campaign_id=campaign.id,
+                gift_tier_id=current_tier_id,
+                payload_json={
+                    "progress_id": str(progress.id),
+                    "previous_tier_id": str(previous_current_tier_id)
+                    if previous_current_tier_id is not None
+                    else None,
+                    "current_tier_id": str(current_tier_id)
+                    if current_tier_id is not None
+                    else None,
+                    "total_amount_minor": progress.total_amount_minor,
+                },
+                context=event_context,
+            )
         return progress
 
     async def calculate_customer_progress(
@@ -362,6 +458,7 @@ class ProgressService:
         company_id: UUID,
         campaign_id: UUID,
         customer_id: UUID,
+        event_context: AuditContext | None = None,
     ) -> CustomerCampaignProgress:
         campaign = await self._get_campaign(
             session,
@@ -395,6 +492,7 @@ class ProgressService:
             total_amount_minor=total_amount_minor,
             tier_result=tier_result,
             stats=stats,
+            event_context=event_context,
         )
 
     async def _affected_customer_ids(
@@ -423,6 +521,7 @@ class ProgressService:
         company_id: UUID,
         campaign_id: UUID,
         chunk_size: int = 500,
+        event_context: AuditContext | None = None,
     ) -> CampaignRecalculationStats:
         campaign = await self._get_campaign(
             session,
@@ -440,6 +539,7 @@ class ProgressService:
             campaign_id=campaign_id,
             customer_ids=customer_ids,
             chunk_size=chunk_size,
+            event_context=event_context,
         )
 
     async def recalculate_affected_customers(
@@ -450,6 +550,7 @@ class ProgressService:
         campaign_id: UUID,
         customer_ids: list[UUID],
         chunk_size: int = 500,
+        event_context: AuditContext | None = None,
     ) -> CampaignRecalculationStats:
         recalculated_count = 0
         failed_count = 0
@@ -462,6 +563,7 @@ class ProgressService:
                         company_id=company_id,
                         campaign_id=campaign_id,
                         customer_id=customer_id,
+                        event_context=event_context,
                     )
                     recalculated_count += 1
                 except Exception:

@@ -14,6 +14,8 @@ from app.common.pagination import PaginationParams
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.core.redis import get_redis_client
 from app.core.settings import get_settings
+from app.modules.audit.context import AuditContext
+from app.modules.audit.service import audit_log_service
 from app.modules.campaigns.models import Campaign, CampaignStatus
 from app.modules.customers.models import (
     Customer,
@@ -28,6 +30,7 @@ from app.modules.integrations.providers.base import (
     ProviderRowError,
 )
 from app.modules.integrations.service import integration_service
+from app.modules.events.service import domain_event_service
 from app.modules.progress.service import progress_service
 from app.modules.sales.models import (
     PaymentStatus,
@@ -248,6 +251,11 @@ class SyncService:
         sync_run.stats_json = stats
         sync_run.error_summary = None
         integration.last_attempted_sync_at = now
+        await self._record_sync_audit(
+            session,
+            sync_run=sync_run,
+            action="sync.started",
+        )
         await session.flush()
 
         try:
@@ -274,6 +282,12 @@ class SyncService:
                     status=SyncRunStatus.FAILED.value,
                     stats=stats,
                     error_summary=connection.message,
+                )
+                await self._emit_sync_status_event(session, sync_run=sync_run)
+                await self._record_sync_audit(
+                    session,
+                    sync_run=sync_run,
+                    action="sync.failed",
                 )
                 integration.status = IntegrationStatus.ERROR.value
                 await session.flush()
@@ -339,6 +353,16 @@ class SyncService:
                 if status == SyncRunStatus.SUCCESS.value
                 else "Sync completed with row-level errors.",
             )
+            await self._emit_sync_status_event(session, sync_run=sync_run)
+            await self._record_sync_audit(
+                session,
+                sync_run=sync_run,
+                action=(
+                    "sync.completed"
+                    if status == SyncRunStatus.SUCCESS.value
+                    else "sync.failed"
+                ),
+            )
             if status == SyncRunStatus.SUCCESS.value:
                 integration.last_successful_sync_at = sync_run.finished_at
                 integration.sync_cursor_json = cursor_after
@@ -362,6 +386,12 @@ class SyncService:
                 status=SyncRunStatus.FAILED.value,
                 stats=stats,
                 error_summary=str(exc),
+            )
+            await self._emit_sync_status_event(session, sync_run=sync_run)
+            await self._record_sync_audit(
+                session,
+                sync_run=sync_run,
+                action="sync.failed",
             )
             integration.status = IntegrationStatus.ERROR.value
             await session.flush()
@@ -595,6 +625,12 @@ class SyncService:
             status=SyncRunStatus.FAILED.value,
             stats=stats,
             error_summary=str(exc) or exc.__class__.__name__,
+        )
+        await self._emit_sync_status_event(session, sync_run=sync_run)
+        await self._record_sync_audit(
+            session,
+            sync_run=sync_run,
+            action="sync.failed",
         )
         integration.status = IntegrationStatus.ERROR.value
 
@@ -857,6 +893,8 @@ class SyncService:
         if not customer_ids_list:
             return
 
+        event_context = self._sync_actor_context(sync_run)
+
         result = await session.execute(
             select(Campaign.id).where(
                 Campaign.company_id == company_id,
@@ -872,6 +910,7 @@ class SyncService:
                     company_id=company_id,
                     campaign_id=campaign_id,
                     customer_ids=customer_ids_list,
+                    event_context=event_context,
                 )
                 stats["recalculated_progress_count"] += (
                     recalculation.recalculated_count
@@ -965,6 +1004,80 @@ class SyncService:
         flag_modified(sync_run, "stats_json")
         sync_run.error_summary = error_summary
         integration.last_attempted_sync_at = sync_run.started_at or finished_at
+
+    def _sync_actor_context(self, sync_run: SyncRun) -> AuditContext:
+        if sync_run.created_by_user_id is not None:
+            return AuditContext(
+                actor_user_id=sync_run.created_by_user_id,
+                actor_type="user",
+            )
+        return AuditContext(actor_type="task")
+
+    async def _record_sync_audit(
+        self,
+        session: AsyncSession,
+        *,
+        sync_run: SyncRun,
+        action: str,
+    ) -> None:
+        context = self._sync_actor_context(sync_run)
+        await audit_log_service.record(
+            session,
+            company_id=sync_run.company_id,
+            action=action,
+            entity_type="sync_run",
+            entity_id=sync_run.id,
+            context=context,
+            metadata_json={
+                "integration_id": str(sync_run.integration_id),
+                "sync_type": sync_run.sync_type,
+                "status": sync_run.status,
+                "task_id": sync_run.task_id,
+            },
+        )
+
+    async def _emit_sync_status_event(
+        self,
+        session: AsyncSession,
+        *,
+        sync_run: SyncRun,
+    ) -> None:
+        event_type = self._event_type_for_status(sync_run.status)
+        if event_type is None:
+            return
+        await domain_event_service.emit(
+            session,
+            company_id=sync_run.company_id,
+            event_type=event_type,
+            aggregate_type="sync_run",
+            aggregate_id=sync_run.id,
+            actor_user_id=sync_run.created_by_user_id,
+            correlation_id=sync_run.task_id,
+            payload_json={
+                "sync_run_id": str(sync_run.id),
+                "integration_id": str(sync_run.integration_id),
+                "status": sync_run.status,
+                "sync_type": sync_run.sync_type,
+                "task_id": sync_run.task_id,
+                "stats_json": sync_run.stats_json,
+                "error_summary": sync_run.error_summary,
+                "started_at": sync_run.started_at.isoformat()
+                if sync_run.started_at
+                else None,
+                "finished_at": sync_run.finished_at.isoformat()
+                if sync_run.finished_at
+                else None,
+            },
+        )
+
+    def _event_type_for_status(self, status: str) -> str | None:
+        if status == SyncRunStatus.SUCCESS.value:
+            return "sync_completed"
+        if status == SyncRunStatus.PARTIALLY_FAILED.value:
+            return "sync_partially_failed"
+        if status == SyncRunStatus.FAILED.value:
+            return "sync_failed"
+        return None
 
     async def create_due_scheduled_sync_runs(
         self,
