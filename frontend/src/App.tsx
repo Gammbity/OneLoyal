@@ -67,6 +67,7 @@ import {
   shortDateTime,
   titleCase,
 } from "./utils";
+import PortalApp from "./PortalApp";
 
 type RouteKey =
   | "dashboard"
@@ -2308,7 +2309,7 @@ function currentRoute(): RouteKey {
   return routeMeta.some((route) => route.key === value) ? value : "dashboard";
 }
 
-export default function App() {
+function AdminApp() {
   const [route, setRouteState] = useState<RouteKey>(currentRoute);
   const [session, setSession] = useState<MeResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -2399,4 +2400,11 @@ export default function App() {
       {screen}
     </Shell>
   );
+}
+
+export default function App() {
+  if (window.location.pathname.startsWith("/portal")) {
+    return <PortalApp />;
+  }
+  return <AdminApp />;
 }
