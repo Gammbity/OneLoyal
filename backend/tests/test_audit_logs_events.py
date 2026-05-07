@@ -4,7 +4,11 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
-from app.common.redaction import REDACTED_VALUE, SENSITIVE_KEY_FRAGMENTS, redact_sensitive_data
+from app.common.redaction import (
+    REDACTED_VALUE,
+    SENSITIVE_KEY_FRAGMENTS,
+    redact_sensitive_data,
+)
 from app.modules.sync.service import sync_service
 
 
@@ -715,7 +719,11 @@ def test_audit_and_event_rbac_scoping_and_portal_token(
         title="Tier",
         amount=10_000_000,
     )
-    activate_campaign(client, token=company_one["access_token"], campaign_id=campaign["id"])
+    activate_campaign(
+        client,
+        token=company_one["access_token"],
+        campaign_id=campaign["id"],
+    )
     progress_customer = create_customer(client, token=company_one["access_token"])
     create_sale(
         client,

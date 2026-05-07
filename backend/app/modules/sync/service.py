@@ -22,6 +22,7 @@ from app.modules.customers.models import (
     CustomerExternalRef,
     CustomerStatus,
 )
+from app.modules.events.service import domain_event_service
 from app.modules.integrations.models import Integration, IntegrationStatus
 from app.modules.integrations.providers.base import (
     ERPCustomerDTO,
@@ -30,7 +31,6 @@ from app.modules.integrations.providers.base import (
     ProviderRowError,
 )
 from app.modules.integrations.service import integration_service
-from app.modules.events.service import domain_event_service
 from app.modules.progress.service import progress_service
 from app.modules.sales.models import (
     PaymentStatus,

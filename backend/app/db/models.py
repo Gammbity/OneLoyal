@@ -1,7 +1,7 @@
 """Import SQLAlchemy models so Alembic can discover metadata."""
 
-from app.modules.auth.models import UserSession
 from app.modules.audit.models import AuditLog
+from app.modules.auth.models import UserSession
 from app.modules.billing.models import (
     CompanySubscription,
     CompanyUsageLimit,
