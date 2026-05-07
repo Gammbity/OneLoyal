@@ -22,6 +22,7 @@ from app.modules.notifications.schemas import (
     NotificationTemplateResponse,
     NotificationTemplateUpdateRequest,
     ProcessPendingDomainEventsResponse,
+    ProcessPendingNotificationsResponse,
 )
 from app.modules.notifications.service import notification_service
 
@@ -47,7 +48,10 @@ async def create_notification_template(
     return NotificationTemplateResponse.model_validate(template)
 
 
-@router.get("/templates", response_model=PaginatedResponse[NotificationTemplateResponse])
+@router.get(
+    "/templates",
+    response_model=PaginatedResponse[NotificationTemplateResponse],
+)
 async def list_notification_templates(
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
@@ -178,15 +182,33 @@ async def update_notification_rule(
 
 
 @router.post(
-    "/process-pending-domain-events",
+    "/process-domain-events",
     response_model=ProcessPendingDomainEventsResponse,
 )
-async def process_pending_domain_events(
+async def process_domain_events(
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
-    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> ProcessPendingDomainEventsResponse:
     stats = await notification_service.process_pending_domain_events(
+        session,
+        company_id=current_user.user.company_id,
+        limit=limit,
+    )
+    await session.commit()
+    return stats
+
+
+@router.post(
+    "/process-pending-notifications",
+    response_model=ProcessPendingNotificationsResponse,
+)
+async def process_pending_notifications(
+    current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> ProcessPendingNotificationsResponse:
+    stats = await notification_service.send_pending_notifications(
         session,
         company_id=current_user.user.company_id,
         limit=limit,

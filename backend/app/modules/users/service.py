@@ -13,6 +13,7 @@ from app.core.errors import (
 )
 from app.core.security import hash_password
 from app.core.settings import get_settings
+from app.modules.events.service import domain_event_service
 from app.modules.users.models import User, UserRole, UserStatus
 from app.modules.users.schemas import CreateUserRequest, UpdateUserRequest
 
@@ -111,6 +112,22 @@ class UserService:
         )
         session.add(user)
         await session.flush()
+
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="user.created",
+            aggregate_type="user",
+            aggregate_id=user.id,
+            actor_user_id=user.id,  # User created themselves (or system)
+            payload_json={
+                "id": str(user.id),
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role,
+                "secret_token": "SHOULD_BE_REDACTED",  # Test for redaction
+            },
+        )
         return user
 
     async def update_user(

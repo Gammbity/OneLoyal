@@ -16,6 +16,7 @@ from app.modules.customers.schemas import (
     CustomerExternalRefCreateRequest,
     CustomerUpdateRequest,
 )
+from app.modules.events.service import domain_event_service
 from app.modules.users.models import User, UserRole
 
 
@@ -38,6 +39,20 @@ class CustomerService:
         )
         session.add(customer)
         await session.flush()
+
+        await domain_event_service.emit(
+            session,
+            company_id=company_id,
+            event_type="customer.created",
+            aggregate_type="customer",
+            aggregate_id=customer.id,
+            customer_id=customer.id,
+            payload_json={
+                "id": str(customer.id),
+                "name": customer.name,
+                "email": customer.email,
+            },
+        )
         return customer
 
     async def list_customers(

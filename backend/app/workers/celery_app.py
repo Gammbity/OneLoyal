@@ -8,7 +8,10 @@ celery_app = Celery(
     "oneloyal",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.modules.sync.tasks"],
+    include=[
+        "app.modules.sync.tasks",
+        "app.modules.notifications.tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -24,6 +27,14 @@ celery_app.conf.update(
         "schedule-due-integrations": {
             "task": "app.sync.schedule_due",
             "schedule": 60.0,
+        },
+        "process-domain-events-for-notifications": {
+            "task": "app.notifications.process_domain_events",
+            "schedule": 30.0,
+        },
+        "process-pending-notifications": {
+            "task": "app.notifications.process_notification_events",
+            "schedule": 30.0,
         },
     },
 )

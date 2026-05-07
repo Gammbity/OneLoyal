@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.notifications.models import (
     NotificationChannel,
-    NotificationEventStatus,
     NotificationRecipientType,
 )
 
@@ -122,4 +121,10 @@ class ProcessPendingDomainEventsResponse(BaseModel):
     events_without_rules: int
     generated_notifications: int
     skipped_notifications: int
+    failed_notifications: int
+
+
+class ProcessPendingNotificationsResponse(BaseModel):
+    checked_notifications: int
+    sent_notifications: int
     failed_notifications: int

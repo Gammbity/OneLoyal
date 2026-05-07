@@ -25,9 +25,9 @@ from app.modules.notifications.schemas import (
     NotificationTemplateCreateRequest,
     NotificationTemplateUpdateRequest,
     ProcessPendingDomainEventsResponse,
+    ProcessPendingNotificationsResponse,
 )
 from app.modules.users.models import User, UserRole, UserStatus
-
 
 PLACEHOLDER_PATTERN = re.compile(r"{([a-zA-Z0-9_.]+)}")
 
@@ -810,6 +810,62 @@ class NotificationService:
         )
         await session.flush()
         return True
+
+    async def send_pending_notifications(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID | None = None,
+        limit: int = 100,
+    ) -> ProcessPendingNotificationsResponse:
+        filters = [NotificationEvent.status == NotificationEventStatus.PENDING.value]
+        if company_id is not None:
+            filters.append(NotificationEvent.company_id == company_id)
+
+        result = await session.execute(
+            select(NotificationEvent)
+            .where(*filters)
+            .order_by(NotificationEvent.created_at.asc())
+            .limit(limit)
+        )
+        notifications = list(result.scalars().all())
+        stats = {
+            "checked_notifications": len(notifications),
+            "sent_notifications": 0,
+            "failed_notifications": 0,
+        }
+
+        for notification in notifications:
+            notification.attempts += 1
+            try:
+                await self._send_notification(session, notification=notification)
+                stats["sent_notifications"] += 1
+            except Exception as exc:
+                notification.status = NotificationEventStatus.FAILED.value
+                notification.last_error = str(exc) or exc.__class__.__name__
+                notification.failed_at = utc_now()
+                stats["failed_notifications"] += 1
+            await session.flush()
+
+        return ProcessPendingNotificationsResponse(**stats)
+
+    async def _send_notification(
+        self,
+        session: AsyncSession,
+        *,
+        notification: NotificationEvent,
+    ) -> None:
+        # In a real system, here we would call the actual provider (Email, SMS, etc.)
+        # For now, we simulate success for demonstration purposes.
+        # To simulate failure for testing, check recipient_identifier.
+        if notification.recipient_identifier == "fail-me@example.com":
+            raise ValueError("Simulated delivery failure")
+
+        notification.status = NotificationEventStatus.SENT.value
+        notification.sent_at = utc_now()
+        notification.last_error = None
+        notification.failed_at = None
+        await session.flush()
 
 
 notification_service = NotificationService()
