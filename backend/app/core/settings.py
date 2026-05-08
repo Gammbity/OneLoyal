@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     sync_task_soft_time_limit_seconds: int = 3300
     sync_enqueue_tasks: bool = True
 
+    # Operational Recovery Settings
+    sync_queued_timeout_minutes: int = 10
+    sync_running_timeout_minutes: int = 60
+    notification_pending_timeout_minutes: int = 60
+    notification_max_attempts: int = 3
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -1,14 +1,14 @@
 services:
   api:
     build:
-      context: .
+      context: ./backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file:
-      - .env
+      - ./backend/.env
     volumes:
-      - ./app:/app/app
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
     ports:
       - "8000:8000"
     depends_on:
@@ -19,12 +19,12 @@ services:
 
   worker:
     build:
-      context: .
+      context: ./backend
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
     env_file:
-      - .env
+      - ./backend/.env
     volumes:
-      - ./app:/app/app
+      - ./backend/app:/app/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,17 +33,29 @@ services:
 
   beat:
     build:
-      context: .
+      context: ./backend
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=INFO
     env_file:
-      - .env
+      - ./backend/.env
     volumes:
-      - ./app:/app/app
+      - ./backend/app:/app/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    command: npm run dev -- --host
 
   postgres:
     image: postgres:16-alpine

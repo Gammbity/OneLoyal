@@ -11,6 +11,7 @@ celery_app = Celery(
     include=[
         "app.modules.sync.tasks",
         "app.modules.notifications.tasks",
+        "app.modules.ops.tasks",
     ],
 )
 
@@ -35,6 +36,14 @@ celery_app.conf.update(
         "process-pending-notifications": {
             "task": "app.notifications.process_notification_events",
             "schedule": 30.0,
+        },
+        "recover-stuck-syncs": {
+            "task": "app.ops.recover_stuck_syncs",
+            "schedule": 300.0,
+        },
+        "recover-notifications": {
+            "task": "app.ops.recover_notifications",
+            "schedule": 600.0,
         },
     },
 )
