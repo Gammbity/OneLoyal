@@ -16,6 +16,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build:
@@ -30,6 +32,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   beat:
     build:
@@ -44,10 +48,26 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: ./backend
+    command: alembic upgrade head
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
-    build:
-      context: ./frontend
+    image: node:22-alpine
+    working_dir: /app
     ports:
       - "5173:5173"
     volumes:
@@ -55,10 +75,10 @@ services:
       - /app/node_modules
     environment:
       - VITE_API_BASE_URL=http://localhost:8000
-    command: npm run dev -- --host
+    command: sh -c "npm ci && npm run dev -- --host"
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:15
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-oneloyal}
       POSTGRES_USER: ${POSTGRES_USER:-oneloyal}

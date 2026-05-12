@@ -1,7 +1,7 @@
 """audit logs and domain events
 
-Revision ID: 0010_audit_logs_domain_events
-Revises: 0009_reward_claims
+Revision ID: 0010
+Revises: 0009
 Create Date: 2026-05-04 12:00:00.000000
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0010_audit_logs_domain_events"
-down_revision: str | None = "0009_reward_claims"
+revision: str = "0010"
+down_revision: str | None = "0009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

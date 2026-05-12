@@ -1,7 +1,7 @@
 """magic link tokens
 
-Revision ID: 0005_magic_link_tokens
-Revises: 0004_customer_campaign_progress
+Revision ID: 0005
+Revises: 0004
 Create Date: 2026-05-01 19:00:00.000000
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0005_magic_link_tokens"
-down_revision: str | None = "0004_customer_campaign_progress"
+revision: str = "0005"
+down_revision: str | None = "0004"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
