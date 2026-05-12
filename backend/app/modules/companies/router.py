@@ -1,14 +1,20 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
 from app.db.session import get_db
 from app.modules.audit.context import audit_context_from_request
 from app.modules.audit.service import audit_log_service
-from app.modules.auth.dependencies import require_company_user, require_owner_or_admin
+from app.modules.auth.dependencies import (
+    require_company_user,
+    require_owner_or_admin,
+    require_platform_admin,
+)
 from app.modules.auth.service import AuthenticatedUser
+from app.modules.companies.models import Company
 from app.modules.companies.schemas import (
     CompanyResponse,
     CompanySettingsResponse,
@@ -17,6 +23,16 @@ from app.modules.companies.schemas import (
 from app.modules.companies.service import company_service
 
 router = APIRouter(prefix="/companies", tags=["companies"])
+
+
+@router.get("", response_model=list[CompanyResponse])
+async def list_companies(
+    current_user: Annotated[AuthenticatedUser, Depends(require_platform_admin)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> list[CompanyResponse]:
+    result = await session.execute(select(Company).order_by(Company.created_at.desc()))
+    companies = result.scalars().all()
+    return [CompanyResponse.model_validate(company) for company in companies]
 
 
 @router.get("/me", response_model=CompanyResponse)

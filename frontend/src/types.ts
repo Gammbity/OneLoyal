@@ -19,6 +19,8 @@ export type Company = {
   base_currency: string;
   timezone: string;
   status: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type User = {

@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   Activity,
   Archive,
   BarChart3,
@@ -38,6 +39,8 @@ import {
 } from "./api";
 import { t, loadLanguage, setLanguage, getLanguage } from "./i18n";
 import type {
+  AuthTokenResponse,
+  Company,
   Campaign,
   CampaignOverview,
   CloseToNextReportItem,
@@ -83,6 +86,11 @@ type RouteKey =
   | "claims"
   | "reports"
   | "ops";
+
+type AppMode =
+  | { kind: "platform-admin" }
+  | { kind: "company-admin"; companySlug: string | null }
+  | { kind: "portal"; companySlug: string | null };
 
 type Resource<T> = {
   data: T;
@@ -340,8 +348,20 @@ function CampaignPicker({
 
 function LoginScreen({
   onLogin,
+  title = "Admin Console",
+  subtitle = "Sign in to manage loyalty operations.",
+  buttonLabel = "Sign in",
+  expectedRole,
+  roleMismatchMessage = "You do not have access to this panel.",
+  externalError,
 }: {
   onLogin: (session: MeResponse) => void;
+  title?: string;
+  subtitle?: string;
+  buttonLabel?: string;
+  expectedRole?: string;
+  roleMismatchMessage?: string;
+  externalError?: string | null;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -354,6 +374,11 @@ function LoginScreen({
     setError(null);
     try {
       const auth = await login(email, password);
+      if (expectedRole && auth.user.role !== expectedRole) {
+        clearTokens();
+        setError(roleMismatchMessage);
+        return;
+      }
       onLogin({
         user: auth.user,
         company: auth.company,
@@ -377,10 +402,11 @@ function LoginScreen({
           OneLoyal
         </div>
         <div style={{ height: 42 }} />
-        <h1>Admin Console</h1>
-        <p>Sign in to manage loyalty operations.</p>
+        <h1>{title}</h1>
+        <p>{subtitle}</p>
         <div style={{ height: 24 }} />
         <form className="form-grid" onSubmit={submit}>
+          {externalError ? <Notice kind="error">{externalError}</Notice> : null}
           {error ? <Notice kind="error">{error}</Notice> : null}
           <Field label="Email">
             <input
@@ -403,7 +429,7 @@ function LoginScreen({
             />
           </Field>
           <Button icon={LogOut} disabled={loading}>
-            {loading ? "Signing in" : "Sign in"}
+            {loading ? "Signing in" : buttonLabel}
           </Button>
         </form>
       </section>
@@ -500,6 +526,253 @@ function Shell({
       </aside>
       <main className="main">{children}</main>
     </div>
+  );
+}
+
+function PlatformAdminApp() {
+  const [session, setSession] = useState<MeResponse | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadLanguage();
+  }, []);
+
+  useEffect(() => {
+    if (!getStoredAccessToken()) {
+      setCheckingSession(false);
+      return;
+    }
+    me()
+      .then((current) => {
+        if (current.role !== "platform_admin") {
+          clearTokens();
+          setSession(null);
+          setError("Platform admin access is required.");
+          return;
+        }
+        setSession(current);
+      })
+      .catch(() => {
+        clearTokens();
+        setSession(null);
+      })
+      .finally(() => setCheckingSession(false));
+  }, []);
+
+  async function handleLogin(nextSession: MeResponse) {
+    setError(null);
+    setSession(nextSession);
+  }
+
+  async function handleLogout() {
+    await logout();
+    setSession(null);
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="login-shell">
+        <section className="login-panel">
+          <div className="brand">
+            <span className="brand-mark">
+              <ShieldCheck size={20} />
+            </span>
+            OneLoyal
+          </div>
+          <div style={{ height: 24 }} />
+          <Loading />
+        </section>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        title="Platform Admin Console"
+        subtitle="Sign in to monitor companies and create new company accounts."
+        buttonLabel="Sign in"
+        expectedRole="platform_admin"
+        roleMismatchMessage="Platform admin access is required."
+        externalError={error}
+      />
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">
+            <ShieldCheck size={20} />
+          </span>
+          OneLoyal
+        </div>
+        <div className="sidebar-footer" style={{ marginTop: 0 }}>
+          <div className="user-block">
+            <strong>{session.user.full_name}</strong>
+            <span>{session.user.email}</span>
+            <span>Platform admin</span>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#999" }}
+            >
+              Language
+            </label>
+            <select
+              className="select"
+              value={getLanguage()}
+              onChange={(e) => {
+                setLanguage(e.target.value as "en" | "uz" | "ru");
+                window.location.reload();
+              }}
+              style={{ width: "100%" }}
+            >
+              <option value="en">English</option>
+              <option value="uz">Oʻzbekcha</option>
+              <option value="ru">Русский</option>
+            </select>
+          </div>
+          <Button icon={LogOut} variant="secondary" onClick={handleLogout}>
+            {t("auth.logout")}
+          </Button>
+        </div>
+      </aside>
+      <main className="main">
+        <PlatformCompaniesScreen />
+        {error ? <Notice kind="error">{error}</Notice> : null}
+      </main>
+    </div>
+  );
+}
+
+function PlatformCompaniesScreen() {
+  const companies = useResource(
+    () => apiRequest<Company[]>('/companies'),
+    [],
+    [],
+  );
+  const [form, setForm] = useState({
+    company_name: "",
+    owner_email: "",
+    owner_password: "",
+  });
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const activeCount = companies.data.filter(
+    (company) => company.status === "active",
+  ).length;
+
+  async function createCompany(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await apiRequest<AuthTokenResponse>("/auth/register-company", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      setNotice(`Company ${response.company?.name ?? form.company_name} created.`);
+      setForm({ company_name: "", owner_email: "", owner_password: "" });
+      companies.reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Companies"
+        subtitle="Monitor company accounts and open their admin panels."
+        actions={
+          <IconButton icon={RefreshCw} label="Refresh" onClick={companies.reload} />
+        }
+      />
+      {error ? <Notice kind="error">{error}</Notice> : null}
+      {notice ? <Notice kind="success">{notice}</Notice> : null}
+      <div className="grid four">
+        <Stat label="Companies" value={companies.data.length} />
+        <Stat label="Active" value={activeCount} />
+        <Stat label="Disabled" value={companies.data.length - activeCount} />
+        <Stat label="Total" value={companies.data.length} />
+      </div>
+      <div style={{ height: 14 }} />
+      <div className="grid two">
+        <Panel title="Company Accounts">
+          {companies.loading ? <Loading /> : null}
+          {companies.error ? <Notice kind="error">{companies.error}</Notice> : null}
+          <Table headers={["Name", "Slug", "Status", "Actions"]}>
+            {companies.data.map((company) => (
+              <tr key={company.id}>
+                <td>
+                  <strong>{company.name}</strong>
+                </td>
+                <td>{company.slug}</td>
+                <td>
+                  <StatusPill value={company.status} />
+                </td>
+                <td>
+                  <div className="actions">
+                    <IconButton
+                      icon={ChevronRight}
+                      label="Open admin"
+                      onClick={() => window.location.assign(`/${company.slug}/admin`)}
+                    />
+                    <IconButton
+                      icon={ArrowLeft}
+                      label="Open user portal"
+                      onClick={() => window.location.assign(`/${company.slug}/user`)}
+                    />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        </Panel>
+        <Panel title="Create Company">
+          <form className="form-grid" onSubmit={createCompany}>
+            <Field label="Company Name">
+              <input
+                className="input"
+                value={form.company_name}
+                onChange={(event) =>
+                  setForm({ ...form, company_name: event.target.value })
+                }
+                required
+              />
+            </Field>
+            <Field label="Admin Email">
+              <input
+                className="input"
+                type="email"
+                value={form.owner_email}
+                onChange={(event) =>
+                  setForm({ ...form, owner_email: event.target.value })
+                }
+                required
+              />
+            </Field>
+            <Field label="Admin Password">
+              <input
+                className="input"
+                type="password"
+                value={form.owner_password}
+                onChange={(event) =>
+                  setForm({ ...form, owner_password: event.target.value })
+                }
+                required
+              />
+            </Field>
+            <Button icon={Plus}>Create company</Button>
+          </form>
+        </Panel>
+      </div>
+    </>
   );
 }
 
@@ -2480,7 +2753,30 @@ function currentRoute(): RouteKey {
   return routeMeta.some((route) => route.key === value) ? value : "dashboard";
 }
 
-function AdminApp() {
+function getAppMode(): AppMode {
+  const { pathname } = window.location;
+  if (pathname === "/admin") {
+    return { kind: "platform-admin" };
+  }
+
+  const companyAdminMatch = pathname.match(/^\/([^/]+)\/admin$/);
+  if (companyAdminMatch?.[1]) {
+    return { kind: "company-admin", companySlug: companyAdminMatch[1] };
+  }
+
+  const portalMatch = pathname.match(/^\/([^/]+)\/user(?:\/.*)?$/);
+  if (portalMatch?.[1]) {
+    return { kind: "portal", companySlug: portalMatch[1] };
+  }
+
+  if (pathname.startsWith("/portal")) {
+    return { kind: "portal", companySlug: null };
+  }
+
+  return { kind: "company-admin", companySlug: null };
+}
+
+function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
   const [route, setRouteState] = useState<RouteKey>(currentRoute);
   const [session, setSession] = useState<MeResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -2567,7 +2863,17 @@ function AdminApp() {
   }
 
   if (!session) {
-    return <LoginScreen onLogin={setSession} />;
+    return (
+      <LoginScreen
+        onLogin={setSession}
+        title={companySlug ? `${companySlug} admin console` : "Company Admin Console"}
+        subtitle={
+          companySlug
+            ? `Sign in to manage ${companySlug} operations.`
+            : "Sign in to manage company operations."
+        }
+      />
+    );
   }
 
   return (
@@ -2583,8 +2889,12 @@ function AdminApp() {
 }
 
 export default function App() {
-  if (window.location.pathname.startsWith("/portal")) {
+  const mode = getAppMode();
+  if (mode.kind === "portal") {
     return <PortalApp />;
   }
-  return <AdminApp />;
+  if (mode.kind === "platform-admin") {
+    return <PlatformAdminApp />;
+  }
+  return <CompanyAdminApp companySlug={mode.companySlug} />;
 }

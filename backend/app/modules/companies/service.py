@@ -1,4 +1,5 @@
 from uuid import UUID
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,18 @@ def normalize_slug(value: str) -> str:
         raise ValidationAppError(
             message="Company slug may contain only letters, numbers, and hyphens.",
             details={"field": "company_slug"},
+        )
+    return normalized
+
+
+def slugify_company_name(value: str) -> str:
+    normalized = value.strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
+    if not normalized:
+        raise ValidationAppError(
+            message="Company name must contain at least one letter or number.",
+            details={"field": "company_name"},
         )
     return normalized
 
@@ -55,8 +68,8 @@ class CompanyService:
         session: AsyncSession,
         *,
         company_name: str,
-        company_slug: str,
-        owner_full_name: str,
+        company_slug: str | None = None,
+        owner_full_name: str | None = None,
         owner_email: str,
         owner_password: str,
     ) -> tuple[Company, CompanySettings, User]:
@@ -67,7 +80,8 @@ class CompanyService:
                 details={"min_length": app_settings.password_min_length},
             )
 
-        slug = normalize_slug(company_slug)
+        slug_source = company_slug or slugify_company_name(company_name)
+        slug = normalize_slug(slug_source)
         email = owner_email.strip().lower()
         await self.ensure_slug_available(session, slug)
 
@@ -85,7 +99,7 @@ class CompanyService:
         owner = User(
             company_id=company.id,
             email=email,
-            full_name=owner_full_name.strip(),
+            full_name=(owner_full_name or company_name).strip(),
             password_hash=hash_password(owner_password),
             role=UserRole.OWNER.value,
             status=UserStatus.ACTIVE.value,

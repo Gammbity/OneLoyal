@@ -1,6 +1,6 @@
 # OneLoyal Admin Guide
 
-Bu hujjat OneLoyal tizimini administrator sifatida ishga tushirish va ishlatish bo‘yicha qo‘llanma hisoblanadi.
+Bu hujjat OneLoyal tizimining umumiy admin paneli va kompaniya admin paneli qanday ishlashini tushuntiradi.
 
 ## 1. Talablar
 
@@ -8,7 +8,39 @@ Bu hujjat OneLoyal tizimini administrator sifatida ishga tushirish va ishlatish 
 - Git repozitoriya lokal kompyuterga yuklangan bo‘lishi kerak.
 - Tavsiya etilgan brauzer: Chrome yoki Edge.
 
-## 2. Loyihani ishga tushirish
+## 2. Rol va URL tuzilmasi
+
+Tizimda 3 ta asosiy kirish nuqtasi bo‘ladi:
+
+- `http://localhost:5173/admin` - umumiy admin panel
+- `http://localhost:5173/{company_name}/admin` - kompaniya admin paneli
+- `http://localhost:5173/{company_name}/user` - kompaniya foydalanuvchi portali
+
+Bu yerda `{company_name}` kompaniya nomi yoki undan hosil qilingan URL qismi bo‘ladi. Masalan, global admin `dusel` kompaniyasini yaratsa, kompaniya paneli `http://localhost:5173/dusel/admin` bo‘ladi.
+
+Umumiy admin panel faqat kompaniyalarni kuzatish va boshqarish uchun ishlatiladi. Bu panelda:
+
+- kompaniyalar yaratiladi
+- kompaniya login/paroli beriladi
+- kompaniya holati kuzatiladi
+- texnik jarayonlar nazorat qilinadi
+
+Global admin panelda sovg‘a, user yoki kompaniya ichki biznes sozlamalari boshqarilmaydi.
+
+Kompaniya admini o‘ziga berilgan login va parol bilan `/{company_name}/admin` ga kiradi. Shu yerda u:
+
+- ERP tizimini ulaydi
+- integratsiyalarni sozlaydi
+- sovg‘a tier larini belgilaydi
+- import va sync jarayonlarini boshqaradi
+
+Kompaniya yaratish paytida kerak bo‘ladigan asosiy ma’lumotlar:
+
+- kompaniya nomi
+- login
+- parol
+
+## 3. Loyihani ishga tushirish
 
 Loyihaning ildiz papkasida quyidagini bajaring:
 
@@ -23,15 +55,45 @@ Tizim ishga tushgach quyidagi servislar ochiladi:
 - Frontend admin panel: `http://localhost:5173`
 - PostgreSQL va Redis konteynerlari ichki tarmoqda ishlaydi.
 
-## 3. Admin panelga kirish
+## 4. Umumiy admin panelga kirish
 
-1. Frontend sahifasini oching: `http://localhost:5173`
+1. Brauzerda `http://localhost:5173/admin` ni oching.
 2. Login formaga admin email va parolini kiriting.
-3. Tizimga kirgach boshqaruv paneli ochiladi.
+3. Tizimga kirgach kompaniyalar ro‘yxati va boshqaruv paneli ochiladi.
 
-Agar siz test muhitida ishlayotgan bo‘lsangiz, oldin yaratilgan admin akkauntdan foydalaning.
+Bu paneldan yangi kompaniya yaratiladi, kompaniya statusi nazorat qilinadi va kerak bo‘lsa kirish ma’lumotlari qayta beriladi.
 
-## 4. Admin panel bo‘limlari
+## 5. Umumiy admin panel bo‘limlari
+
+### Companies
+
+- Yangi kompaniya yaratish
+- Kompaniya holatini boshqarish
+- Kompaniya admin login ma’lumotlarini ko‘rish yoki qayta chiqarish
+
+### Platform Control
+
+- Tizimdagi barcha kompaniyalarni kuzatish
+- Muammoli kompaniyalarni bloklash yoki faollashtirish
+- Umumiy statistikani ko‘rish
+
+## 6. Kompaniya admin panelga kirish
+
+1. Kompaniya admini uchun yaratilgan login va parolni oling.
+2. Brauzerda `http://localhost:5173/{company_name}/admin` ni oching.
+3. Login ma’lumotlarini kiriting.
+4. Kompaniyangizning ERP sozlamalari ochiladi.
+
+Kompaniya admini o‘z tashkilotining ichki sozlamalarini boshqaradi. U boshqa kompaniyalarni ko‘rmaydi.
+
+Misol:
+
+- kompaniya: `dusel`
+- admin login: `dusel@gmail.com`
+- admin parol: `dusel123`
+- kirish URL: `http://localhost:5173/dusel/admin`
+
+## 7. Kompaniya admin panel bo‘limlari
 
 ### Dashboard
 
@@ -99,16 +161,16 @@ Bu bo‘limda kampaniyalar boshqariladi:
 - Qolib ketgan sync larni tiklash
 - Notification processing holatini kuzatish
 
-## 5. Admin uchun asosiy ish oqimi
+## 8. Kompaniya admin uchun asosiy ish oqimi
 
-1. Kampaniya yarating.
-2. Kampaniya uchun gift tier lar qo‘shing.
-3. Mijozlar va savdo ma’lumotlarini import qiling.
-4. Progress va reports bo‘limida natijalarni tekshiring.
-5. Integratsiyalarni ulang va sync ni yoqing.
-6. Claim larni tasdiqlang yoki rad eting.
+1. Umumiy admin tomonidan kompaniya yaratiladi.
+2. Kompaniya adminiga login va parol beriladi.
+3. Admin `dusel/admin` ga kiradi.
+4. ERP yoki integratsiya ulanadi.
+5. Kampaniya va gift tier lar sozlanadi.
+6. Import, sync va claims ishlari boshqariladi.
 
-## 6. API bilan ishlash
+## 9. API bilan ishlash
 
 Admin panel API bilan `http://localhost:8000/api/v1` prefiksi orqali ishlaydi.
 
@@ -122,7 +184,7 @@ Muhim endpoint lar:
 - `GET /api/v1/customers`
 - `GET /api/v1/reports/*`
 
-## 7. Til sozlamalari
+## 10. Til sozlamalari
 
 Admin panelda til tanlash mavjud:
 
@@ -132,7 +194,7 @@ Admin panelda til tanlash mavjud:
 
 Tanlangan til brauzer xotirasida saqlanadi va sahifa yangilangandan keyin ham qoladi.
 
-## 8. Nosozliklarni tekshirish
+## 11. Nosozliklarni tekshirish
 
 Agar tizim ochilmasa:
 
@@ -141,7 +203,7 @@ Agar tizim ochilmasa:
 - `docker compose logs frontend --tail 80` bilan frontend loglarini ko‘ring.
 - `.env` faylida DB va Redis manzillarini tekshiring.
 
-## 9. Tavsiya etilgan xavfsizlik amaliyoti
+## 12. Tavsiya etilgan xavfsizlik amaliyoti
 
 - Production muhitda standart parollarni ishlatmang.
 - `SECRET_KEY` va `ENCRYPTION_KEY` ni albatta almashtiring.

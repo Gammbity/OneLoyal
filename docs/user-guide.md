@@ -1,6 +1,6 @@
 # OneLoyal User Guide
 
-Bu hujjat OneLoyal portalidan oddiy foydalanuvchi sifatida qanday foydalanish bo‘yicha qo‘llanma hisoblanadi.
+Bu hujjat kompaniya foydalanuvchilari uchun mo‘ljallangan portaldan qanday foydalanishni tushuntiradi.
 
 ## 1. Portal nima?
 
@@ -11,25 +11,30 @@ Portal mijozlar uchun shaxsiy sahifa bo‘lib, u yerda foydalanuvchi:
 - claim larni kuzatadi
 - tarixiy xarid va mukofot ma’lumotlarini ko‘radi
 
-## 2. Portaldan foydalanish
+## 2. URL tuzilmasi
 
-Foydalanuvchi odatda maxsus magic link orqali portalga kiradi.
+Foydalanuvchi portali quyidagi manzilda ochiladi:
 
-Portal URL odatda quyidagicha bo‘ladi:
+- `http://localhost:5173/{company_name}/user`
 
-- `http://localhost:5173/portal`
-- `http://localhost:5173/portal/access`
+Bu yerda `{company_name}` kompaniyaning URL da ishlatiladigan nomi bo‘ladi. Masalan, `dusel` kompaniyasi uchun portal `http://localhost:5173/dusel/user` bo‘ladi.
 
-Agar sizga token bilan havola yuborilgan bo‘lsa, u ochilganda portal sessiyasi avtomatik yaratiladi.
+Shu portal orqali foydalanuvchi o‘z kampaniyalari va progressini ko‘radi.
 
-## 3. Kirish usuli
+## 3. Portaldan foydalanish
+
+Foydalanuvchi odatda maxsus magic link yoki kompaniya admini bergan kirish havolasi orqali portalga kiradi.
+
+Token bilan havola yuborilgan bo‘lsa, u ochilganda portal sessiyasi avtomatik yaratiladi.
+
+## 4. Kirish usuli
 
 1. Sizga yuborilgan secure link ni oching.
 2. Link ichidagi token tekshiriladi.
 3. Agar token to‘g‘ri bo‘lsa, portal ochiladi.
 4. Agar token noto‘g‘ri yoki muddati o‘tgan bo‘lsa, xatolik chiqadi.
 
-## 4. Portal bo‘limlari
+## 5. Portal bo‘limlari
 
 ### Campaigns
 
@@ -59,7 +64,7 @@ Bu bo‘limda barcha claim lar ko‘rinadi:
 - rejected
 - skipped
 
-## 5. Foydalanuvchi qanday ishlatadi?
+## 6. Foydalanuvchi qanday ishlatadi?
 
 1. Magic link orqali portalga kiring.
 2. Kampaniyalar ro‘yxatini ko‘ring.
@@ -67,7 +72,7 @@ Bu bo‘limda barcha claim lar ko‘rinadi:
 4. Claim holatlarini kuzating.
 5. Xarid tarixini ko‘rib boring.
 
-## 6. Portal menyusi
+## 7. Portal menyusi
 
 Portal yuqori menyusida quyidagi bo‘limlar bor:
 
@@ -77,7 +82,7 @@ Portal yuqori menyusida quyidagi bo‘limlar bor:
 
 Logout bosilganda portal sessiyasi tozalanadi.
 
-## 7. Til tanlash
+## 8. Til tanlash
 
 Agar admin panelda til yoqilgan bo‘lsa, portal ham tizimning umumiy til sozlamalaridan foydalanishi mumkin.
 
@@ -87,7 +92,7 @@ Mavjud tillar:
 - O‘zbekcha
 - Русский
 
-## 8. Xatoliklar
+## 9. Xatoliklar
 
 Agar portal ochilmasa:
 
@@ -97,7 +102,7 @@ Agar portal ochilmasa:
 
 Bunday holda administratorga murojaat qiling.
 
-## 9. Foydali tavsiyalar
+## 10. Foydali tavsiyalar
 
 - Portal linkni boshqalar bilan ulashmang.
 - Maxfiy tokenni saqlang.

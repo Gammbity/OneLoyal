@@ -1,6 +1,11 @@
 from typing import Any
 
+import asyncio
+
 from fastapi.testclient import TestClient
+
+from app.core.security import hash_password
+from app.modules.users.models import User, UserRole, UserStatus
 
 
 def register_company(
@@ -22,6 +27,26 @@ def register_company(
     )
     assert response.status_code == 201, response.json()
     return response.json()
+
+
+def create_platform_admin(client: TestClient) -> None:
+    sessionmaker = client.app.state.test_sessionmaker
+
+    async def _create() -> None:
+        async with sessionmaker() as session:
+            session.add(
+                User(
+                    company_id=None,
+                    email="platform@example.com",
+                    full_name="Platform Admin",
+                    password_hash=hash_password("platform-secret-password"),
+                    role=UserRole.PLATFORM_ADMIN.value,
+                    status=UserStatus.ACTIVE.value,
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_create())
 
 
 def auth_headers(token: str) -> dict[str, str]:
@@ -49,6 +74,46 @@ def test_register_company_success(client: TestClient) -> None:
     assert payload["user"]["role"] == "owner"
     assert payload["company"]["slug"] == "acme"
     assert_no_secret_fields(payload)
+
+
+def test_register_company_without_slug_uses_company_name(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/auth/register-company",
+        json={
+            "company_name": "Dusel",
+            "owner_full_name": "Dusel Admin",
+            "owner_email": "dusel@example.com",
+            "owner_password": "super-secret-password",
+        },
+    )
+
+    assert response.status_code == 201, response.json()
+    payload = response.json()
+    assert payload["company"]["slug"] == "dusel"
+
+
+def test_platform_admin_can_list_companies(client: TestClient) -> None:
+    create_platform_admin(client)
+    owner = register_company(client, slug="dusel", owner_email="owner@example.com")
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "platform@example.com",
+            "password": "platform-secret-password",
+        },
+    )
+    assert login_response.status_code == 200, login_response.json()
+
+    response = client.get(
+        "/api/v1/companies",
+        headers=auth_headers(login_response.json()["access_token"]),
+    )
+
+    assert response.status_code == 200, response.json()
+    slugs = {company["slug"] for company in response.json()}
+    assert "dusel" in slugs
+    assert owner["company"]["slug"] in slugs
 
 
 def test_duplicate_email_rejected(client: TestClient) -> None:

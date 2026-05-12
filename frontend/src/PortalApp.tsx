@@ -44,15 +44,30 @@ type PortalBundle = {
   claims: RewardClaim[];
 };
 
+function getPortalBasePath(): string {
+  const path = window.location.pathname;
+  const companyMatch = path.match(/^\/([^/]+)\/user(?:\/.*)?$/);
+  if (companyMatch?.[1]) {
+    return `/${companyMatch[1]}/user`;
+  }
+  return "/portal";
+}
+
+function portalPath(path = ""): string {
+  return `${getPortalBasePath()}${path}`;
+}
+
 function parsePortalRoute(): PortalRoute {
   const path = window.location.pathname;
-  if (path === "/portal/access") {
+  const basePath = getPortalBasePath();
+  const relativePath = path.startsWith(basePath) ? path.slice(basePath.length) : path;
+  if (relativePath === "/access") {
     return { name: "access" };
   }
-  if (path === "/portal/claims") {
+  if (relativePath === "/claims") {
     return { name: "claims" };
   }
-  const campaignMatch = path.match(/^\/portal\/campaigns\/([^/]+)$/);
+  const campaignMatch = relativePath.match(/^\/campaigns\/([^/]+)$/);
   if (campaignMatch?.[1]) {
     return { name: "campaign", campaignId: campaignMatch[1] };
   }
@@ -131,7 +146,7 @@ function PortalShell({
       <header className="portal-topbar">
         <button
           className="portal-brand"
-          onClick={() => portalNavigate("/portal")}
+          onClick={() => portalNavigate(portalPath())}
           aria-label="Portal home"
         >
           <span className="brand-mark">
@@ -140,8 +155,8 @@ function PortalShell({
           <span>OneLoyal</span>
         </button>
         <nav className="portal-nav">
-          <button onClick={() => portalNavigate("/portal")}>Campaigns</button>
-          <button onClick={() => portalNavigate("/portal/claims")}>Claims</button>
+          <button onClick={() => portalNavigate(portalPath())}>Campaigns</button>
+          <button onClick={() => portalNavigate(portalPath("/claims"))}>Claims</button>
           <button onClick={onLogout}>
             <LogOut size={16} />
             Logout
@@ -191,7 +206,7 @@ function PortalAccessScreen() {
           return;
         }
         setState("success");
-        portalNavigate("/portal", true);
+        portalNavigate(portalPath(), true);
       })
       .catch((error: unknown) => {
         if (cancelled) {
@@ -202,7 +217,7 @@ function PortalAccessScreen() {
           portalErrorMessage(error) ||
             "This magic link is invalid, expired, or revoked.",
         );
-        window.history.replaceState(null, "", "/portal/access");
+        window.history.replaceState(null, "", portalPath("/access"));
       });
 
     return () => {
@@ -232,7 +247,7 @@ function PortalAccessScreen() {
           <PortalNotice kind="info">{message}</PortalNotice>
         ) : null}
         {getStoredPortalToken() && state !== "loading" ? (
-          <PortalButton type="button" onClick={() => portalNavigate("/portal")}>
+          <PortalButton type="button" onClick={() => portalNavigate(portalPath())}>
             <Gift size={16} />
             Continue to rewards
           </PortalButton>
@@ -276,7 +291,7 @@ function PortalHome({ bundle }: { bundle: PortalBundle }) {
               </div>
               <PortalButton
                 type="button"
-                onClick={() => portalNavigate(`/portal/campaigns/${campaign.id}`)}
+                onClick={() => portalNavigate(portalPath(`/campaigns/${campaign.id}`))}
               >
                 View progress
                 <ChevronRight size={16} />
@@ -480,7 +495,7 @@ function PortalCampaignPage({
 
   return (
     <section className="portal-content">
-      <button className="portal-back" onClick={() => portalNavigate("/portal")}>
+      <button className="portal-back" onClick={() => portalNavigate(portalPath())}>
         <ArrowLeft size={16} />
         Back to campaigns
       </button>
@@ -665,7 +680,7 @@ export default function PortalApp() {
       return;
     }
     if (!getStoredPortalToken()) {
-      portalNavigate("/portal/access", true);
+      portalNavigate(portalPath("/access"), true);
       setLoading(false);
       return;
     }
@@ -704,7 +719,7 @@ export default function PortalApp() {
 
   function logout() {
     clearPortalToken();
-    portalNavigate("/portal/access", true);
+    portalNavigate(portalPath("/access"), true);
   }
 
   const content = useMemo(() => {

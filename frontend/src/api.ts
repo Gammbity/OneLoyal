@@ -11,6 +11,15 @@ const ACCESS_TOKEN_KEY = "oneloyal.access_token";
 const REFRESH_TOKEN_KEY = "oneloyal.refresh_token";
 const PORTAL_TOKEN_KEY = "one_loyal_portal_token";
 
+function getPortalAccessPath(): string {
+  const path = window.location.pathname;
+  const companyMatch = path.match(/^\/([^/]+)\/user(?:\/.*)?$/);
+  if (companyMatch?.[1]) {
+    return `/${companyMatch[1]}/user/access`;
+  }
+  return "/portal/access";
+}
+
 export class ApiError extends Error {
   status: number;
   details: unknown;
@@ -121,8 +130,11 @@ export async function portalApiRequest<T>(
   if (!response.ok) {
     if (response.status === 401) {
       clearPortalToken();
-      if (window.location.pathname.startsWith("/portal")) {
-        window.history.replaceState(null, "", "/portal/access");
+      if (
+        window.location.pathname.startsWith("/portal") ||
+        /\/[^/]+\/user(?:\/|$)/.test(window.location.pathname)
+      ) {
+        window.history.replaceState(null, "", getPortalAccessPath());
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
     }

@@ -8,14 +8,16 @@ from app.modules.users.schemas import UserResponse
 
 class RegisterCompanyRequest(BaseModel):
     company_name: str = Field(min_length=1, max_length=255)
-    company_slug: str = Field(min_length=2, max_length=120)
-    owner_full_name: str = Field(min_length=1, max_length=255)
+    company_slug: str | None = Field(default=None, min_length=2, max_length=120)
+    owner_full_name: str | None = Field(default=None, min_length=1, max_length=255)
     owner_email: EmailStr
     owner_password: str = Field(min_length=8)
 
     @field_validator("company_slug")
     @classmethod
-    def normalize_slug(cls, value: str) -> str:
+    def normalize_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip().lower()
         if not normalized.replace("-", "").isalnum():
             raise ValueError(
