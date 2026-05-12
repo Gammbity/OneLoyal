@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock, patch
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -24,25 +26,53 @@ def test_db_health_endpoint(client: TestClient) -> None:
 
 
 def test_redis_health_endpoint(client: TestClient) -> None:
-    response = client.get("/api/v1/health/redis")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    with patch("app.api.v1.health.get_redis_client") as mock_get_redis:
+        mock_client = MagicMock()
+        mock_client.ping = MagicMock() # Should be async if used with await
+        
+        async def mock_ping():
+            return True
+        
+        mock_client.ping = mock_ping
+        mock_get_redis.return_value = mock_client
+        
+        response = client.get("/api/v1/health/redis")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
 
 
 def test_celery_health_endpoint(client: TestClient) -> None:
-    response = client.get("/api/v1/health/celery")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    with patch("app.workers.celery_app.celery_app.connection_for_read") as mock_conn:
+        mock_c = MagicMock()
+        mock_c.__enter__.return_value = MagicMock()
+        mock_conn.return_value = mock_c
+        
+        response = client.get("/api/v1/health/celery")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
 
 
 def test_full_health_endpoint(client: TestClient) -> None:
-    response = client.get("/api/v1/health/full")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ok"
-    assert data["checks"]["database"] == "ok"
-    assert data["checks"]["redis"] == "ok"
-    assert data["checks"]["celery_broker"] == "ok"
+    with patch("app.api.v1.health.get_redis_client") as mock_get_redis, \
+         patch("app.workers.celery_app.celery_app.connection_for_read") as mock_conn:
+        
+        mock_client = MagicMock()
+        async def mock_ping():
+            return True
+        mock_client.ping = mock_ping
+        mock_get_redis.return_value = mock_client
+        
+        mock_c = MagicMock()
+        mock_c.__enter__.return_value = MagicMock()
+        mock_conn.return_value = mock_c
+        
+        response = client.get("/api/v1/health/full")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["checks"]["database"] == "ok"
+        assert data["checks"]["redis"] == "ok"
+        assert data["checks"]["celery_broker"] == "ok"
 
 
 def test_request_id_header_exists(client: TestClient) -> None:
@@ -79,4 +109,3 @@ def test_app_error_response_shape() -> None:
             "request_id": "error-request-id",
         }
     }
-

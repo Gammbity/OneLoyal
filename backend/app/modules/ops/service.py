@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.datetime import utc_now
 from app.core.settings import get_settings
 from app.modules.events.models import DomainEvent, DomainEventStatus
-from app.modules.integrations.models import Integration
+from app.modules.integrations.models import Integration, IntegrationStatus
 from app.modules.notifications.models import (
     NotificationEvent,
     NotificationEventStatus,
@@ -99,14 +99,18 @@ class OpsService:
         active_integrations = await session.scalar(
             select(func.count(Integration.id)).where(
                 Integration.company_id == company_id,
-                Integration.is_active == True,
+                Integration.status == IntegrationStatus.ACTIVE.value,
+                Integration.deleted_at.is_(None),
             )
         )
+        # We check settings_json for scheduled_sync_enabled
+        # This is a bit slow with JSON in SQL, but for status it's fine
         scheduled_integrations = await session.scalar(
             select(func.count(Integration.id)).where(
                 Integration.company_id == company_id,
-                Integration.is_active == True,
-                Integration.sync_interval_seconds != None,
+                Integration.status == IntegrationStatus.ACTIVE.value,
+                Integration.deleted_at.is_(None),
+                Integration.settings_json["scheduled_sync_enabled"].as_boolean() == True,
             )
         )
 

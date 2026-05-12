@@ -3,14 +3,23 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.datetime import utc_now
 from app.modules.sync.models import SyncRun, SyncRunStatus
 from app.modules.notifications.models import NotificationEvent, NotificationEventStatus
 from app.modules.events.models import DomainEvent, DomainEventStatus
+from app.modules.integrations.models import Integration, IntegrationStatus
+
+
+@pytest_asyncio.fixture
+async def db_session(client: TestClient) -> AsyncSession:
+    sessionmaker = client.app.state.test_sessionmaker
+    async with sessionmaker() as session:
+        yield session
 
 
 def register_company(
@@ -72,36 +81,19 @@ async def test_recover_stuck_syncs(client: TestClient, token, db_session: AsyncS
     headers = auth_headers(token)
     now = utc_now()
     
-    # 1. Get company_id from token or by querying
-    # We can just use the DB to create some stuck runs for the company
-    result = await db_session.execute(select(SyncRun).limit(1))
-    # Wait, I need to make sure there's an integration to link to.
-    # Actually, registration creates a default company.
+    # Create integration first
+    from app.modules.companies.models import Company
+    res_c = await db_session.execute(select(Company).limit(1))
+    company = res_c.scalar_one()
     
-    # Let's just use the API to create something and then mess it up in DB
-    # Or just use the DB directly since we have db_session
-    
-    # Create integration first if none exists (usually none after fresh reg in tests)
-    # Actually, let's keep it simple and just use the DB to insert.
-    
-    # But wait, SyncRun needs an integration_id.
-    # Let's find any integration in the DB.
-    from app.modules.integrations.models import Integration
-    res = await db_session.execute(select(Integration).limit(1))
-    integration = res.scalar_one_or_none()
-    if not integration:
-        # Create one
-        from app.modules.companies.models import Company
-        res_c = await db_session.execute(select(Company).limit(1))
-        company = res_c.scalar_one()
-        integration = Integration(
-            company_id=company.id,
-            name="Test Int",
-            provider_type="fake",
-            is_active=True,
-        )
-        db_session.add(integration)
-        await db_session.commit()
+    integration = Integration(
+        company_id=company.id,
+        name="Test Int",
+        provider="fake",
+        status=IntegrationStatus.ACTIVE.value,
+    )
+    db_session.add(integration)
+    await db_session.commit()
 
     company_id = integration.company_id
 

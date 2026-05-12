@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     environment: str = "local"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
-    cors_origins: list[str] = Field(
+    cors_origins: Any = Field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
     )
 
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     portal_base_url: str | None = None
     import_max_rows: int = 10000
     import_preview_error_limit: int = 50
-    import_allowed_extensions: list[str] = Field(default_factory=lambda: ["csv"])
+    import_allowed_extensions: Any = Field(default_factory=lambda: ["csv"])
     moysklad_base_url: str = "https://api.moysklad.ru/api/remap/1.2"
     moysklad_timeout_seconds: float = 15.0
     moysklad_page_limit: int = Field(default=1000, ge=1, le=1000)

@@ -408,3 +408,33 @@ export type PortalPurchaseHistoryItem = {
   payment_status: string;
   document_status: string;
 };
+
+export type OpsStatusResponse = {
+  company_id: ID;
+  sync_runs: Record<string, number>;
+  queued_sync_count: number;
+  running_sync_count: number;
+  stuck_queued_sync_count: number;
+  stuck_running_sync_count: number;
+  pending_notification_events_count: number;
+  failed_notification_events_count: number;
+  pending_domain_events_count: number;
+  failed_domain_events_count: number;
+  recent_failed_sync_errors_count: number;
+  active_integrations_count: number;
+  scheduled_integrations_count: number;
+  last_successful_sync_time: string | null;
+  last_failed_sync_time: string | null;
+};
+
+export type RecoverStuckSyncsResponse = {
+  checked_count: number;
+  recovered_queued_count: number;
+  recovered_running_count: number;
+};
+
+export type RecoverNotificationsResponse = {
+  checked_count: number;
+  failed_count: number;
+  retried_count: number;
+};

@@ -57,6 +57,9 @@ import type {
   SyncHealthReport,
   SyncRun,
   TopCustomerReportItem,
+  OpsStatusResponse,
+  RecoverStuckSyncsResponse,
+  RecoverNotificationsResponse,
 } from "./types";
 import {
   asJson,
@@ -77,7 +80,8 @@ type RouteKey =
   | "imports"
   | "integrations"
   | "claims"
-  | "reports";
+  | "reports"
+  | "ops";
 
 type Resource<T> = {
   data: T;
@@ -104,6 +108,7 @@ const routeMeta: Array<{
   { key: "integrations", label: "Integrations", icon: PlugZap },
   { key: "claims", label: "Reward Claims", icon: TicketCheck },
   { key: "reports", label: "Reports", icon: BarChart3 },
+  { key: "ops", label: "Operations", icon: Activity },
 ];
 
 function errorMessage(error: unknown): string {
@@ -2304,6 +2309,152 @@ function renderReportTab(
   );
 }
 
+function OpsScreen() {
+  const ops = useResource(
+    () => apiRequest<OpsStatusResponse>("/ops/status"),
+    [],
+    null as OpsStatusResponse | null,
+  );
+
+  const [recoveringSyncs, setRecoveringSyncs] = useState(false);
+  const [recoveringNotifs, setRecoveringNotifs] = useState(false);
+  const [recoveryResult, setRecoveryResult] = useState<string | null>(null);
+
+  async function recoverSyncs() {
+    setRecoveringSyncs(true);
+    setRecoveryResult(null);
+    try {
+      const result = await apiRequest<RecoverStuckSyncsResponse>(
+        "/ops/recover-stuck-syncs",
+        { method: "POST" },
+      );
+      setRecoveryResult(
+        `Recovered ${result.recovered_queued_count} queued and ${result.recovered_running_count} running syncs.`,
+      );
+      ops.reload();
+    } catch (err) {
+      setRecoveryResult(errorMessage(err));
+    } finally {
+      setRecoveringSyncs(false);
+    }
+  }
+
+  async function recoverNotifs() {
+    setRecoveringNotifs(true);
+    setRecoveryResult(null);
+    try {
+      const result = await apiRequest<RecoverNotificationsResponse>(
+        "/ops/recover-notifications",
+        { method: "POST" },
+      );
+      setRecoveryResult(`Recovered ${result.failed_count} notifications.`);
+      ops.reload();
+    } catch (err) {
+      setRecoveryResult(errorMessage(err));
+    } finally {
+      setRecoveringNotifs(false);
+    }
+  }
+
+  if (!ops.data && ops.loading) return <Loading />;
+  if (ops.error) return <Notice kind="error">{ops.error}</Notice>;
+
+  const data = ops.data!;
+
+  return (
+    <>
+      <PageHeader
+        title="Operations"
+        subtitle="System health and maintenance"
+        actions={
+          <IconButton icon={RefreshCw} label="Refresh" onClick={ops.reload} />
+        }
+      />
+      {recoveryResult ? <Notice kind="success">{recoveryResult}</Notice> : null}
+
+      <div className="grid two">
+        <Panel title="Sync Status">
+          <div className="grid two" style={{ marginBottom: 16 }}>
+            <Stat label="Queued" value={data.queued_sync_count} />
+            <Stat label="Running" value={data.running_sync_count} />
+          </div>
+          {data.stuck_queued_sync_count > 0 || data.stuck_running_sync_count > 0 ? (
+            <Notice kind="error">
+              Detected {data.stuck_queued_sync_count} stuck queued and{" "}
+              {data.stuck_running_sync_count} stuck running syncs.
+            </Notice>
+          ) : (
+            <Notice kind="success">No stuck syncs detected.</Notice>
+          )}
+          <div style={{ marginTop: 16 }}>
+            <Button
+              icon={RefreshCw}
+              onClick={recoverSyncs}
+              disabled={recoveringSyncs}
+            >
+              {recoveringSyncs ? "Recovering..." : "Recover Stuck Syncs"}
+            </Button>
+          </div>
+        </Panel>
+
+        <Panel title="Notifications & Events">
+          <div className="grid two" style={{ marginBottom: 16 }}>
+            <Stat
+              label="Pending Notifs"
+              value={data.pending_notification_events_count}
+            />
+            <Stat
+              label="Failed Notifs"
+              value={data.failed_notification_events_count}
+            />
+            <Stat
+              label="Pending Events"
+              value={data.pending_domain_events_count}
+            />
+            <Stat
+              label="Failed Events"
+              value={data.failed_domain_events_count}
+            />
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <Button
+              icon={RefreshCw}
+              onClick={recoverNotifs}
+              disabled={recoveringNotifs}
+            >
+              {recoveringNotifs ? "Recovering..." : "Recover Notifications"}
+            </Button>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid two" style={{ marginTop: 24 }}>
+        <Panel title="Integrations Health">
+          <div className="grid two">
+            <Stat label="Active" value={data.active_integrations_count} />
+            <Stat label="Scheduled" value={data.scheduled_integrations_count} />
+          </div>
+          <div className="muted" style={{ marginTop: 16 }}>
+            Last successful sync:{" "}
+            {shortDateTime(data.last_successful_sync_time) || "Never"}
+            <br />
+            Last failed sync: {shortDateTime(data.last_failed_sync_time) || "None"}
+          </div>
+        </Panel>
+        <Panel title="Recent Errors">
+          <Stat
+            label="Errors (24h)"
+            value={data.recent_failed_sync_errors_count}
+          />
+          <div className="muted" style={{ marginTop: 16 }}>
+            Go to Reports &gt; Sync Health for more details.
+          </div>
+        </Panel>
+      </div>
+    </>
+  );
+}
+
 function currentRoute(): RouteKey {
   const value = window.location.hash.replace("#", "") as RouteKey;
   return routeMeta.some((route) => route.key === value) ? value : "dashboard";
@@ -2365,6 +2516,9 @@ function AdminApp() {
     }
     if (route === "reports") {
       return <ReportsScreen />;
+    }
+    if (route === "ops") {
+      return <OpsScreen />;
     }
     return <DashboardScreen />;
   }, [route]);
