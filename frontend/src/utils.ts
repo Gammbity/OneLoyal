@@ -1,8 +1,10 @@
+import { getLocale } from "./i18n";
+
 export function money(value: number | null | undefined, currency = "UZS"): string {
   if (value === null || value === undefined) {
     return "-";
   }
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(getLocale(), {
     maximumFractionDigits: 0,
   }).format(value) + ` ${currency}`;
 }
@@ -11,7 +13,7 @@ export function compactNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) {
     return "-";
   }
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(getLocale(), {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
@@ -21,7 +23,7 @@ export function shortDate(value: string | null | undefined): string {
   if (!value) {
     return "-";
   }
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(getLocale(), {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -32,7 +34,7 @@ export function shortDateTime(value: string | null | undefined): string {
   if (!value) {
     return "-";
   }
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(getLocale(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",

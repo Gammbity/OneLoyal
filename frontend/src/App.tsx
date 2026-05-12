@@ -36,6 +36,7 @@ import {
   me,
   query,
 } from "./api";
+import { t, loadLanguage, setLanguage, getLanguage } from "./i18n";
 import type {
   Campaign,
   CampaignOverview,
@@ -455,6 +456,7 @@ function Shell({
         <nav className="nav">
           {routeMeta.map((item) => {
             const Icon = item.icon;
+            const labelKey = `nav.${item.key.replace("-", ".")}`;
             return (
               <button
                 key={item.key}
@@ -462,7 +464,7 @@ function Shell({
                 onClick={() => setRoute(item.key)}
               >
                 <Icon size={18} />
-                {item.label}
+                {t(labelKey) || item.label}
               </button>
             );
           })}
@@ -473,8 +475,26 @@ function Shell({
             <span>{session.company?.name ?? session.user.email}</span>
             <span>{titleCase(session.role)}</span>
           </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#999" }}>
+              Language
+            </label>
+            <select
+              className="select"
+              value={getLanguage()}
+              onChange={(e) => {
+                setLanguage(e.target.value as "en" | "uz" | "ru");
+                window.location.reload();
+              }}
+              style={{ width: "100%" }}
+            >
+              <option value="en">English</option>
+              <option value="uz">Oʻzbekcha</option>
+              <option value="ru">Русский</option>
+            </select>
+          </div>
           <Button icon={LogOut} variant="secondary" onClick={onLogout}>
-            Logout
+            {t("auth.logout")}
           </Button>
         </div>
       </aside>
@@ -2464,6 +2484,12 @@ function AdminApp() {
   const [route, setRouteState] = useState<RouteKey>(currentRoute);
   const [session, setSession] = useState<MeResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [langKey, setLangKey] = useState(0); // Force re-render on language change
+
+  useEffect(() => {
+    loadLanguage();
+    setLangKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
     const onHash = () => setRouteState(currentRoute());
