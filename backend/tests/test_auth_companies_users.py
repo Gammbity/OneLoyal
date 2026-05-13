@@ -52,6 +52,18 @@ def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def platform_login(client: TestClient) -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/auth/platform-login",
+        json={
+            "email": "platform@example.com",
+            "password": "platform-secret-password",
+        },
+    )
+    assert response.status_code == 200, response.json()
+    return response.json()
+
+
 def assert_no_secret_fields(value: Any) -> None:
     if isinstance(value, dict):
         assert "password_hash" not in value
@@ -95,24 +107,102 @@ def test_platform_admin_can_list_companies(client: TestClient) -> None:
     create_platform_admin(client)
     owner = register_company(client, slug="dusel", owner_email="owner@example.com")
 
-    login_response = client.post(
-        "/api/v1/auth/platform-login",
-        json={
-            "email": "platform@example.com",
-            "password": "platform-secret-password",
-        },
-    )
-    assert login_response.status_code == 200, login_response.json()
+    login_response = platform_login(client)
 
     response = client.get(
         "/api/v1/companies",
-        headers=auth_headers(login_response.json()["access_token"]),
+        headers=auth_headers(login_response["access_token"]),
     )
 
     assert response.status_code == 200, response.json()
     slugs = {company["slug"] for company in response.json()}
     assert "dusel" in slugs
     assert owner["company"]["slug"] in slugs
+
+
+def test_platform_admin_can_provision_company_from_platform_api(
+    client: TestClient,
+) -> None:
+    create_platform_admin(client)
+    platform_token = platform_login(client)["access_token"]
+
+    response = client.post(
+        "/api/v1/companies",
+        headers=auth_headers(platform_token),
+        json={
+            "company_name": "North Star LLC",
+            "company_slug": "north-star",
+            "owner_full_name": "North Star Owner",
+            "owner_email": "north-star@example.com",
+            "owner_password": "super-secret-password",
+        },
+    )
+
+    assert response.status_code == 201, response.json()
+    payload = response.json()
+    assert payload["company"]["slug"] == "north-star"
+    assert payload["owner"]["role"] == "owner"
+    assert payload["owner"]["email"] == "north-star@example.com"
+    assert payload["login_path"] == "/north-star/login"
+    assert "access_token" not in payload
+
+
+def test_platform_overview_is_platform_only(client: TestClient) -> None:
+    owner = register_company(client)
+    create_platform_admin(client)
+
+    tenant_response = client.get(
+        "/api/v1/platform/overview",
+        headers=auth_headers(owner["access_token"]),
+    )
+    assert tenant_response.status_code == 403
+
+    platform_token = platform_login(client)["access_token"]
+    platform_response = client.get(
+        "/api/v1/platform/overview",
+        headers=auth_headers(platform_token),
+    )
+    assert platform_response.status_code == 200, platform_response.json()
+    assert platform_response.json()["summary"]["company_count"] >= 1
+
+
+def test_platform_token_cannot_access_tenant_business_routes(
+    client: TestClient,
+) -> None:
+    create_platform_admin(client)
+    platform_token = platform_login(client)["access_token"]
+
+    response = client.get(
+        "/api/v1/campaigns",
+        headers=auth_headers(platform_token),
+    )
+
+    assert response.status_code == 403
+
+
+def test_tenant_token_cannot_access_platform_routes(client: TestClient) -> None:
+    owner = register_company(client)
+
+    response = client.get(
+        "/api/v1/platform/billing",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 403
+
+
+def test_tenant_slug_header_mismatch_is_rejected(client: TestClient) -> None:
+    owner = register_company(client, slug="acme")
+
+    response = client.get(
+        "/api/v1/customers",
+        headers={
+            **auth_headers(owner["access_token"]),
+            "X-Tenant-Slug": "wrong-company",
+        },
+    )
+
+    assert response.status_code == 401
 
 
 def test_same_email_allowed_across_companies(client: TestClient) -> None:
@@ -385,4 +475,3 @@ def test_password_and_refresh_hashes_never_returned(client: TestClient) -> None:
 
     for response in responses:
         assert_no_secret_fields(response)
-

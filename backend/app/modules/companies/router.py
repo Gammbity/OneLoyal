@@ -16,11 +16,14 @@ from app.modules.auth.dependencies import (
 from app.modules.auth.service import AuthenticatedUser
 from app.modules.companies.models import Company
 from app.modules.companies.schemas import (
+    CompanyProvisionResponse,
     CompanyResponse,
     CompanySettingsResponse,
+    CreateCompanyRequest,
     UpdateCompanySettingsRequest,
 )
 from app.modules.companies.service import company_service
+from app.modules.users.schemas import UserResponse
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -33,6 +36,28 @@ async def list_companies(
     result = await session.execute(select(Company).order_by(Company.created_at.desc()))
     companies = result.scalars().all()
     return [CompanyResponse.model_validate(company) for company in companies]
+
+
+@router.post("", response_model=CompanyProvisionResponse, status_code=201)
+async def create_company(
+    data: CreateCompanyRequest,
+    current_user: Annotated[AuthenticatedUser, Depends(require_platform_admin)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> CompanyProvisionResponse:
+    company, _, owner = await company_service.create_company_with_owner(
+        session,
+        company_name=data.company_name,
+        company_slug=data.company_slug,
+        owner_full_name=data.owner_full_name,
+        owner_email=data.owner_email,
+        owner_password=data.owner_password,
+    )
+    await session.commit()
+    return CompanyProvisionResponse(
+        company=CompanyResponse.model_validate(company),
+        owner=UserResponse.model_validate(owner),
+        login_path=f"/{company.slug}/login",
+    )
 
 
 @router.get("/me", response_model=CompanyResponse)

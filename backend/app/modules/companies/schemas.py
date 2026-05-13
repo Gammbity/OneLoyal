@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.modules.users.schemas import UserResponse
 
 
 class CompanyResponse(BaseModel):
@@ -16,6 +18,32 @@ class CompanyResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CreateCompanyRequest(BaseModel):
+    company_name: str = Field(min_length=1, max_length=255)
+    company_slug: str | None = Field(default=None, min_length=2, max_length=120)
+    owner_full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    owner_email: EmailStr
+    owner_password: str = Field(min_length=8)
+
+    @field_validator("company_slug")
+    @classmethod
+    def normalize_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not normalized.replace("-", "").isalnum():
+            raise ValueError(
+                "slug may contain only lowercase letters, numbers, and hyphens"
+            )
+        return normalized
+
+
+class CompanyProvisionResponse(BaseModel):
+    company: CompanyResponse
+    owner: UserResponse
+    login_path: str
 
 
 class CompanySettingsResponse(BaseModel):
@@ -48,4 +76,3 @@ class UpdateCompanySettingsRequest(BaseModel):
     reward_claim_enabled_default: bool | None = None
     data_retention_days: int | None = Field(default=None, ge=1)
     extra_settings_json: dict[str, Any] | None = None
-

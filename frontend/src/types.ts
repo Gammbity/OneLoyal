@@ -440,3 +440,97 @@ export type RecoverNotificationsResponse = {
   failed_count: number;
   retried_count: number;
 };
+
+export type CompanyProvisionResponse = {
+  company: Company;
+  owner: User;
+  login_path: string;
+};
+
+export type PlatformPlanSummary = {
+  plan_id: ID;
+  code: string;
+  name: string;
+  is_active: boolean;
+  company_count: number;
+  active_subscription_count: number;
+  trialing_subscription_count: number;
+  past_due_subscription_count: number;
+  cancelled_subscription_count: number;
+  expired_subscription_count: number;
+};
+
+export type PlatformOverviewSummary = {
+  company_count: number;
+  active_tenant_count: number;
+  suspended_tenant_count: number;
+  archived_tenant_count: number;
+  subscription_count: number;
+  active_subscription_count: number;
+  trialing_subscription_count: number;
+  past_due_subscription_count: number;
+  cancelled_subscription_count: number;
+  expired_subscription_count: number;
+};
+
+export type PlatformOpsSummary = {
+  total_integrations: number;
+  active_integrations: number;
+  queued_sync_runs: number;
+  running_sync_runs: number;
+  failed_sync_runs_24h: number;
+  partially_failed_sync_runs_24h: number;
+  successful_sync_runs_24h: number;
+  failed_sync_errors_24h: number;
+};
+
+export type PlatformQueueSummary = {
+  pending_notifications: number;
+  failed_notifications: number;
+  pending_domain_events: number;
+  failed_domain_events: number;
+};
+
+export type PlatformRecentFailure = {
+  sync_run_id: ID;
+  company_id: ID;
+  company_name: string;
+  company_slug: string;
+  integration_id: ID;
+  integration_name: string;
+  sync_type: string;
+  status: string;
+  error_summary: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export type PlatformOverviewResponse = {
+  generated_at: string;
+  summary: PlatformOverviewSummary;
+  plans: PlatformPlanSummary[];
+  ops: PlatformOpsSummary;
+  queues: PlatformQueueSummary;
+  recent_failures: PlatformRecentFailure[];
+};
+
+export type PlatformSubscriptionItem = {
+  subscription_id: ID;
+  company_id: ID;
+  company_name: string;
+  company_slug: string;
+  plan_id: ID;
+  plan_code: string;
+  plan_name: string;
+  status: string;
+  created_at: string;
+  current_period_ends_at: string | null;
+  trial_ends_at: string | null;
+};
+
+export type PlatformBillingResponse = {
+  generated_at: string;
+  summary: PlatformOverviewSummary;
+  plans: PlatformPlanSummary[];
+  subscriptions: PlatformSubscriptionItem[];
+};

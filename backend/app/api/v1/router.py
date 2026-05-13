@@ -13,6 +13,7 @@ from app.modules.integrations.router import router as integrations_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.ops.router import router as ops_router
 from app.modules.portal.router import router as portal_router
+from app.modules.platform.router import router as platform_router
 from app.modules.progress.router import router as progress_router
 from app.modules.reports.router import router as reports_router
 from app.modules.sales.router import router as sale_records_router
@@ -31,6 +32,7 @@ api_router.include_router(sale_records_router)
 api_router.include_router(progress_router)
 api_router.include_router(reports_router)
 api_router.include_router(portal_router)
+api_router.include_router(platform_router)
 api_router.include_router(reward_claims_router)
 api_router.include_router(integrations_router)
 api_router.include_router(notifications_router)

@@ -31,6 +31,13 @@ function getTokenKeys(context: AuthContext): { access: string; refresh: string }
       };
 }
 
+function getCurrentTenantSlug(): string | null {
+  const match = window.location.pathname.match(
+    /^\/(?!platform(?:\/|$)|portal(?:\/|$))([^/]+)(?:\/|$)/,
+  );
+  return match?.[1] ?? null;
+}
+
 function getPortalAccessPath(): string {
   const path = window.location.pathname;
   const companyMatch = path.match(/^\/([^/]+)\/portal(?:\/.*)?$/);
@@ -88,7 +95,17 @@ export function clearPortalToken(): void {
 
 function authHeaders(): HeadersInit {
   const token = getStoredAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (!token) {
+    return {};
+  }
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (getAuthContext() === "tenant") {
+    const tenantSlug = getCurrentTenantSlug();
+    if (tenantSlug) {
+      headers["X-Tenant-Slug"] = tenantSlug;
+    }
+  }
+  return headers;
 }
 
 type RequestOptions = RequestInit & {

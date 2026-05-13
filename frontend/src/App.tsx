@@ -15,7 +15,6 @@ import {
   PlugZap,
   Plus,
   RefreshCw,
-  Search,
   ShieldCheck,
   TicketCheck,
   Trash2,
@@ -40,10 +39,10 @@ import {
 } from "./api";
 import { t, loadLanguage, setLanguage, getLanguage } from "./i18n";
 import type {
-  AuthTokenResponse,
   Company,
   Campaign,
   CampaignOverview,
+  CompanyProvisionResponse,
   CloseToNextReportItem,
   Customer,
   GiftLiabilityReport,
@@ -65,11 +64,12 @@ import type {
   OpsStatusResponse,
   RecoverStuckSyncsResponse,
   RecoverNotificationsResponse,
+  PlatformBillingResponse,
+  PlatformOverviewResponse,
   User,
 } from "./types";
 import {
   asJson,
-  compactNumber,
   money,
   parseJsonObject,
   shortDate,
@@ -84,7 +84,6 @@ type TenantRouteKey =
   | "campaigns"
   | "gift-tiers"
   | "customers"
-  | "users"
   | "imports"
   | "integrations"
   | "claims"
@@ -92,7 +91,7 @@ type TenantRouteKey =
   | "ops";
 
 // PLATFORM ROUTES (platform-admin system control)
-type PlatformRouteKey = "companies" | "billing" | "platform-ops" | "settings";
+type PlatformRouteKey = "admin" | "companies" | "billing" | "ops" | "settings";
 
 type AppMode =
   | { kind: "platform-admin" }
@@ -121,7 +120,6 @@ const tenantRouteMeta: Array<{
   { key: "campaigns", label: "Campaigns", icon: Trophy },
   { key: "gift-tiers", label: "Gift Tiers", icon: Gift },
   { key: "customers", label: "Customers", icon: Users },
-  { key: "users", label: "Users", icon: Users },
   { key: "imports", label: "Imports", icon: Upload },
   { key: "integrations", label: "Integrations", icon: PlugZap },
   { key: "claims", label: "Reward Claims", icon: TicketCheck },
@@ -135,9 +133,10 @@ const platformRouteMeta: Array<{
   label: string;
   icon: LucideIcon;
 }> = [
+  { key: "admin", label: "Platform Overview", icon: LayoutDashboard },
   { key: "companies", label: "Companies", icon: Users },
   { key: "billing", label: "Billing & Plans", icon: BarChart3 },
-  { key: "platform-ops", label: "Platform Ops", icon: Activity },
+  { key: "ops", label: "Platform Ops", icon: Activity },
   { key: "settings", label: "Settings", icon: Archive },
 ];
 
@@ -372,6 +371,9 @@ function companyAdminPath(companySlug: string | null, route: TenantRouteKey): st
   if (route === "dashboard") {
     return `${basePath}/admin`;
   }
+  if (route === "ops") {
+    return `${basePath}/operations`;
+  }
   return `${basePath}/${route}`;
 }
 
@@ -381,12 +383,11 @@ function parseCompanyRoute(pathname: string): TenantRouteKey {
   if (lastSegment === "campaigns") return "campaigns";
   if (lastSegment === "gift-tiers") return "gift-tiers";
   if (lastSegment === "customers") return "customers";
-  if (lastSegment === "users") return "users";
   if (lastSegment === "imports") return "imports";
   if (lastSegment === "integrations") return "integrations";
   if (lastSegment === "claims") return "claims";
   if (lastSegment === "reports") return "reports";
-  if (lastSegment === "ops") return "ops";
+  if (lastSegment === "operations") return "ops";
   return "dashboard";
 }
 
@@ -415,6 +416,20 @@ function LoginScreen({
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const metricTiles =
+    loginMode === "platform"
+      ? [
+          { label: "Companies", value: "SaaS" },
+          { label: "Plans", value: "Ops" },
+          { label: "Queues", value: "Health" },
+          { label: "Support", value: "Control" },
+        ]
+      : [
+          { label: "Campaigns", value: "Loyalty" },
+          { label: "Gift stock", value: "Rewards" },
+          { label: "Customers", value: "Progress" },
+          { label: "Reports", value: "Insights" },
+        ];
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -486,42 +501,53 @@ function LoginScreen({
       </section>
       <section className="login-art">
         <div className="metric-wall">
-          <div className="metric-tile">
-            <span>Campaigns</span>
-            <strong>16.4</strong>
-          </div>
-          <div className="metric-tile">
-            <span>Gift stock</span>
-            <strong>16.5</strong>
-          </div>
-          <div className="metric-tile">
-            <span>Customer progress</span>
-            <strong>16.6</strong>
-          </div>
-          <div className="metric-tile">
-            <span>Reports</span>
-            <strong>16.10</strong>
-          </div>
+          {metricTiles.map((tile) => (
+            <div key={tile.label} className="metric-tile">
+              <span>{tile.label}</span>
+              <strong>{tile.value}</strong>
+            </div>
+          ))}
         </div>
       </section>
     </main>
   );
 }
 
-function Shell({
+function LanguageSelector() {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#999" }}>
+        Language
+      </label>
+      <select
+        className="select"
+        value={getLanguage()}
+        onChange={(e) => {
+          setLanguage(e.target.value as "en" | "uz" | "ru");
+          window.location.reload();
+        }}
+        style={{ width: "100%" }}
+      >
+        <option value="en">English</option>
+        <option value="uz">Oʻzbekcha</option>
+        <option value="ru">Русский</option>
+      </select>
+    </div>
+  );
+}
+
+function PlatformLayout({
   session,
   route,
   setRoute,
   onLogout,
   children,
-  routeMeta: routeMetadata,
 }: {
   session: MeResponse;
-  route: string;
-  setRoute: (route: string) => void;
+  route: PlatformRouteKey;
+  setRoute: (route: PlatformRouteKey) => void;
   onLogout: () => void;
   children: ReactNode;
-  routeMeta: Array<{ key: string; label: string; icon: LucideIcon }>;
 }) {
   return (
     <div className="app-shell">
@@ -532,8 +558,68 @@ function Shell({
           </span>
           OneLoyal
         </div>
+        <div className="muted" style={{ padding: "0 20px 16px" }}>
+          SaaS control center
+        </div>
         <nav className="nav">
-          {routeMetadata.map((item) => {
+          {platformRouteMeta.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.key}
+                className={`nav-button ${route === item.key ? "active" : ""}`}
+                onClick={() => setRoute(item.key)}
+              >
+                <Icon size={18} />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="sidebar-footer">
+          <div className="user-block">
+            <strong>{session.user.full_name}</strong>
+            <span>{session.user.email}</span>
+            <span>Platform admin</span>
+          </div>
+          <LanguageSelector />
+          <Button icon={LogOut} variant="secondary" onClick={onLogout}>
+            {t("auth.logout")}
+          </Button>
+        </div>
+      </aside>
+      <main className="main">{children}</main>
+    </div>
+  );
+}
+
+function TenantLayout({
+  session,
+  route,
+  setRoute,
+  onLogout,
+  children,
+}: {
+  session: MeResponse;
+  route: TenantRouteKey;
+  setRoute: (route: TenantRouteKey) => void;
+  onLogout: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">
+            <ShieldCheck size={20} />
+          </span>
+          OneLoyal
+        </div>
+        <div className="muted" style={{ padding: "0 20px 16px" }}>
+          Company loyalty workspace
+        </div>
+        <nav className="nav">
+          {tenantRouteMeta.map((item) => {
             const Icon = item.icon;
             const labelKey = `nav.${item.key.replace("-", ".")}`;
             return (
@@ -554,24 +640,7 @@ function Shell({
             <span>{session.company?.name ?? session.user.email}</span>
             <span>{titleCase(session.role)}</span>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#999" }}>
-              Language
-            </label>
-            <select
-              className="select"
-              value={getLanguage()}
-              onChange={(e) => {
-                setLanguage(e.target.value as "en" | "uz" | "ru");
-                window.location.reload();
-              }}
-              style={{ width: "100%" }}
-            >
-              <option value="en">English</option>
-              <option value="uz">Oʻzbekcha</option>
-              <option value="ru">Русский</option>
-            </select>
-          </div>
+          <LanguageSelector />
           <Button icon={LogOut} variant="secondary" onClick={onLogout}>
             {t("auth.logout")}
           </Button>
@@ -584,16 +653,19 @@ function Shell({
 
 function currentPlatformRoute(): PlatformRouteKey {
   const { pathname } = window.location;
-  if (pathname.includes("/billing")) return "billing";
-  if (pathname.includes("/platform-ops")) return "platform-ops";
-  if (pathname.includes("/settings")) return "settings";
-  return "companies";
+  const lastSegment = pathname.split("/").filter(Boolean).pop();
+  if (lastSegment === "billing") return "billing";
+  if (lastSegment === "companies") return "companies";
+  if (lastSegment === "ops") return "ops";
+  if (lastSegment === "settings") return "settings";
+  return "admin";
 }
 
 function platformPath(route: PlatformRouteKey): string {
-  if (route === "companies") return "/platform/admin";
+  if (route === "admin") return "/platform/admin";
+  if (route === "companies") return "/platform/companies";
   if (route === "billing") return "/platform/billing";
-  if (route === "platform-ops") return "/platform/ops";
+  if (route === "ops") return "/platform/ops";
   if (route === "settings") return "/platform/settings";
   return "/platform/admin";
 }
@@ -606,6 +678,10 @@ function PlatformAdminApp() {
 
   useEffect(() => {
     loadLanguage();
+    if (window.location.pathname === "/admin") {
+      window.history.replaceState(null, "", "/platform/admin");
+      setRouteState("admin");
+    }
   }, []);
 
   useEffect(() => {
@@ -644,21 +720,24 @@ function PlatformAdminApp() {
   async function handleLogin(nextSession: MeResponse) {
     setError(null);
     setSession(nextSession);
+    setRouteState("admin");
     window.history.replaceState(null, "", "/platform/admin");
   }
 
   async function handleLogout() {
     await logout();
     setSession(null);
-    window.history.replaceState(null, "", "/platform/login");
+    setRouteState("admin");
+    window.history.replaceState(null, "", "/platform/admin");
   }
 
   const screen = useMemo(() => {
+    if (route === "admin") return <PlatformOverviewScreen />;
     if (route === "companies") return <PlatformCompaniesScreen />;
     if (route === "billing") return <PlatformBillingScreen />;
-    if (route === "platform-ops") return <PlatformOpsScreen />;
+    if (route === "ops") return <PlatformOpsScreen />;
     if (route === "settings") return <PlatformSettingsScreen />;
-    return <PlatformCompaniesScreen />;
+    return <PlatformOverviewScreen />;
   }, [route]);
 
   if (checkingSession) {
@@ -694,114 +773,379 @@ function PlatformAdminApp() {
   }
 
   return (
-    <Shell
+    <PlatformLayout
       session={session}
-      route={route as string}
-      setRoute={(r) => setRoute(r as PlatformRouteKey)}
+      route={route}
+      setRoute={setRoute}
       onLogout={handleLogout}
-      routeMeta={platformRouteMeta}
     >
       {screen}
-    </Shell>
+    </PlatformLayout>
   );
 }
 
-function PlatformOpsScreen() {
-  const ops = useResource(
-    () => apiRequest<OpsStatusResponse>("/ops/status"),
+const emptyPlatformOverview = (): PlatformOverviewResponse => ({
+  generated_at: "",
+  summary: {
+    company_count: 0,
+    active_tenant_count: 0,
+    suspended_tenant_count: 0,
+    archived_tenant_count: 0,
+    subscription_count: 0,
+    active_subscription_count: 0,
+    trialing_subscription_count: 0,
+    past_due_subscription_count: 0,
+    cancelled_subscription_count: 0,
+    expired_subscription_count: 0,
+  },
+  plans: [],
+  ops: {
+    total_integrations: 0,
+    active_integrations: 0,
+    queued_sync_runs: 0,
+    running_sync_runs: 0,
+    failed_sync_runs_24h: 0,
+    partially_failed_sync_runs_24h: 0,
+    successful_sync_runs_24h: 0,
+    failed_sync_errors_24h: 0,
+  },
+  queues: {
+    pending_notifications: 0,
+    failed_notifications: 0,
+    pending_domain_events: 0,
+    failed_domain_events: 0,
+  },
+  recent_failures: [],
+});
+
+const emptyPlatformBilling = (): PlatformBillingResponse => ({
+  generated_at: "",
+  summary: emptyPlatformOverview().summary,
+  plans: [],
+  subscriptions: [],
+});
+
+function PlatformOverviewScreen() {
+  const overview = useResource(
+    () => apiRequest<PlatformOverviewResponse>("/platform/overview"),
     [],
-    {
-      company_id: "",
-      sync_runs: {},
-      queued_sync_count: 0,
-      running_sync_count: 0,
-      stuck_queued_sync_count: 0,
-      stuck_running_sync_count: 0,
-      pending_notification_events_count: 0,
-      failed_notification_events_count: 0,
-      pending_domain_events_count: 0,
-      failed_domain_events_count: 0,
-      recent_failed_sync_errors_count: 0,
-      active_integrations_count: 0,
-      scheduled_integrations_count: 0,
-      last_successful_sync_time: null,
-      last_failed_sync_time: null,
-    },
+    emptyPlatformOverview(),
   );
 
   return (
     <>
       <PageHeader
-        title="Platform Operations"
-        subtitle="System health and worker status"
-        actions={
-          <IconButton
-            icon={RefreshCw}
-            label="Refresh"
-            onClick={ops.reload}
-          />
-        }
+        title="Platform Overview"
+        subtitle="Global SaaS ownership metrics across companies, plans, and workers"
+        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={overview.reload} />}
       />
-      {ops.error ? <Notice kind="error">{ops.error}</Notice> : null}
-      <Panel title="Sync Queues">
-        {ops.loading ? <Loading /> : null}
-        <div className="grid four">
-          <Stat label="Queued" value={ops.data.queued_sync_count} />
-          <Stat label="Running" value={ops.data.running_sync_count} />
-          <Stat label="Stuck Queued" value={ops.data.stuck_queued_sync_count} />
-          <Stat label="Stuck Running" value={ops.data.stuck_running_sync_count} />
-        </div>
-      </Panel>
+      {overview.loading ? <Loading /> : null}
+      {overview.error ? <Notice kind="error">{overview.error}</Notice> : null}
+      <div className="grid four">
+        <Stat label="Companies" value={overview.data.summary.company_count} />
+        <Stat label="Active tenants" value={overview.data.summary.active_tenant_count} />
+        <Stat
+          label="Subscriptions"
+          value={overview.data.summary.subscription_count}
+        />
+        <Stat
+          label="Failed syncs (24h)"
+          value={overview.data.ops.failed_sync_runs_24h}
+        />
+      </div>
       <div style={{ height: 14 }} />
       <div className="grid two">
-        <Panel title="Integration Sync Health">
+        <Panel title="Platform Ops Snapshot">
           <div className="grid two">
-            <Stat label="Active Integrations" value={ops.data.active_integrations_count} />
-            <Stat label="Scheduled" value={ops.data.scheduled_integrations_count} />
-            <Stat label="Failed Errors" value={ops.data.recent_failed_sync_errors_count} />
+            <Stat label="Queued runs" value={overview.data.ops.queued_sync_runs} />
+            <Stat label="Running runs" value={overview.data.ops.running_sync_runs} />
             <Stat
-              label="Last Sync"
-              value={ops.data.last_successful_sync_time ? shortDateTime(ops.data.last_successful_sync_time) : "Never"}
+              label="Active integrations"
+              value={overview.data.ops.active_integrations}
+            />
+            <Stat
+              label="Failed errors (24h)"
+              value={overview.data.ops.failed_sync_errors_24h}
             />
           </div>
         </Panel>
-        <Panel title="Events">
+        <Panel title="Queue Health">
           <div className="grid two">
-            <Stat label="Pending Notifications" value={ops.data.pending_notification_events_count} />
-            <Stat label="Failed Notifications" value={ops.data.failed_notification_events_count} />
-            <Stat label="Pending Events" value={ops.data.pending_domain_events_count} />
-            <Stat label="Failed Events" value={ops.data.failed_domain_events_count} />
+            <Stat
+              label="Pending notifications"
+              value={overview.data.queues.pending_notifications}
+            />
+            <Stat
+              label="Failed notifications"
+              value={overview.data.queues.failed_notifications}
+            />
+            <Stat
+              label="Pending domain events"
+              value={overview.data.queues.pending_domain_events}
+            />
+            <Stat
+              label="Failed domain events"
+              value={overview.data.queues.failed_domain_events}
+            />
           </div>
+        </Panel>
+      </div>
+      <div style={{ height: 14 }} />
+      <div className="grid two">
+        <Panel title="Plan Coverage">
+          {overview.data.plans.length ? (
+            <Table headers={["Plan", "Companies", "Active", "Trialing", "Past Due"]}>
+              {overview.data.plans.map((plan) => (
+                <tr key={plan.plan_id}>
+                  <td>
+                    <strong>{plan.name}</strong>
+                    <div className="muted">{plan.code}</div>
+                  </td>
+                  <td>{plan.company_count}</td>
+                  <td>{plan.active_subscription_count}</td>
+                  <td>{plan.trialing_subscription_count}</td>
+                  <td>{plan.past_due_subscription_count}</td>
+                </tr>
+              ))}
+            </Table>
+          ) : (
+            <Empty>No plans assigned yet.</Empty>
+          )}
+        </Panel>
+        <Panel title="Recent Failed Jobs">
+          {overview.data.recent_failures.length ? (
+            <Table headers={["Company", "Integration", "Status", "Finished"]}>
+              {overview.data.recent_failures.map((failure) => (
+                <tr key={failure.sync_run_id}>
+                  <td>
+                    <strong>{failure.company_name}</strong>
+                    <div className="muted">/{failure.company_slug}</div>
+                  </td>
+                  <td>{failure.integration_name}</td>
+                  <td>
+                    <StatusPill value={failure.status} />
+                  </td>
+                  <td>{shortDateTime(failure.finished_at ?? failure.started_at)}</td>
+                </tr>
+              ))}
+            </Table>
+          ) : (
+            <Empty>No failed jobs recorded.</Empty>
+          )}
         </Panel>
       </div>
     </>
   );
 }
 
-function PlatformBillingScreen() {
+function PlatformOpsScreen() {
+  const overview = useResource(
+    () => apiRequest<PlatformOverviewResponse>("/platform/overview"),
+    [],
+    emptyPlatformOverview(),
+  );
+
   return (
     <>
       <PageHeader
-        title="Billing & Plans"
-        subtitle="Manage company subscriptions and pricing plans"
+        title="Platform Ops"
+        subtitle="Worker, queue, and sync health across every tenant"
+        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={overview.reload} />}
       />
-      <Panel title="Plans">
-        <Empty>Billing system coming soon.</Empty>
+      {overview.loading ? <Loading /> : null}
+      {overview.error ? <Notice kind="error">{overview.error}</Notice> : null}
+      <Panel title="Worker & Sync Health">
+        <div className="grid four">
+          <Stat label="Queued runs" value={overview.data.ops.queued_sync_runs} />
+          <Stat label="Running runs" value={overview.data.ops.running_sync_runs} />
+          <Stat
+            label="Failed runs (24h)"
+            value={overview.data.ops.failed_sync_runs_24h}
+          />
+          <Stat
+            label="Partial runs (24h)"
+            value={overview.data.ops.partially_failed_sync_runs_24h}
+          />
+        </div>
+      </Panel>
+      <div style={{ height: 14 }} />
+      <div className="grid two">
+        <Panel title="Platform Metrics">
+          <div className="grid two">
+            <Stat label="Companies" value={overview.data.summary.company_count} />
+            <Stat
+              label="Active tenants"
+              value={overview.data.summary.active_tenant_count}
+            />
+            <Stat
+              label="Total integrations"
+              value={overview.data.ops.total_integrations}
+            />
+            <Stat
+              label="Failed errors (24h)"
+              value={overview.data.ops.failed_sync_errors_24h}
+            />
+          </div>
+        </Panel>
+        <Panel title="Queue Backlog">
+          <div className="grid two">
+            <Stat
+              label="Pending notifications"
+              value={overview.data.queues.pending_notifications}
+            />
+            <Stat
+              label="Failed notifications"
+              value={overview.data.queues.failed_notifications}
+            />
+            <Stat
+              label="Pending events"
+              value={overview.data.queues.pending_domain_events}
+            />
+            <Stat
+              label="Failed events"
+              value={overview.data.queues.failed_domain_events}
+            />
+          </div>
+        </Panel>
+      </div>
+      <div style={{ height: 14 }} />
+      <Panel title="Failed Job Overview">
+        {overview.data.recent_failures.length ? (
+          <Table headers={["Company", "Integration", "Type", "Error", "Finished"]}>
+            {overview.data.recent_failures.map((failure) => (
+              <tr key={failure.sync_run_id}>
+                <td>{failure.company_name}</td>
+                <td>{failure.integration_name}</td>
+                <td>{titleCase(failure.sync_type)}</td>
+                <td>{failure.error_summary ?? "-"}</td>
+                <td>{shortDateTime(failure.finished_at ?? failure.started_at)}</td>
+              </tr>
+            ))}
+          </Table>
+        ) : (
+          <Empty>No failed jobs recorded.</Empty>
+        )}
       </Panel>
     </>
   );
 }
 
+function PlatformBillingScreen() {
+  const billing = useResource(
+    () => apiRequest<PlatformBillingResponse>("/platform/billing"),
+    [],
+    emptyPlatformBilling(),
+  );
+
+  return (
+    <>
+      <PageHeader
+        title="Billing & Plans"
+        subtitle="Subscription health, plan coverage, and company billing visibility"
+        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={billing.reload} />}
+      />
+      {billing.loading ? <Loading /> : null}
+      {billing.error ? <Notice kind="error">{billing.error}</Notice> : null}
+      <div className="grid four">
+        <Stat label="Subscriptions" value={billing.data.summary.subscription_count} />
+        <Stat
+          label="Active"
+          value={billing.data.summary.active_subscription_count}
+        />
+        <Stat
+          label="Trialing"
+          value={billing.data.summary.trialing_subscription_count}
+        />
+        <Stat label="Past due" value={billing.data.summary.past_due_subscription_count} />
+      </div>
+      <div style={{ height: 14 }} />
+      <div className="grid two">
+        <Panel title="Plans">
+          {billing.data.plans.length ? (
+            <Table headers={["Plan", "Companies", "Active", "Trialing", "Past Due"]}>
+              {billing.data.plans.map((plan) => (
+                <tr key={plan.plan_id}>
+                  <td>
+                    <strong>{plan.name}</strong>
+                    <div className="muted">{plan.code}</div>
+                  </td>
+                  <td>{plan.company_count}</td>
+                  <td>{plan.active_subscription_count}</td>
+                  <td>{plan.trialing_subscription_count}</td>
+                  <td>{plan.past_due_subscription_count}</td>
+                </tr>
+              ))}
+            </Table>
+          ) : (
+            <Empty>No plans found.</Empty>
+          )}
+        </Panel>
+        <Panel title="Company Subscriptions">
+          {billing.data.subscriptions.length ? (
+            <Table headers={["Company", "Plan", "Status", "Ends", "Created"]}>
+              {billing.data.subscriptions.map((subscription) => (
+                <tr key={subscription.subscription_id}>
+                  <td>
+                    <strong>{subscription.company_name}</strong>
+                    <div className="muted">/{subscription.company_slug}</div>
+                  </td>
+                  <td>{subscription.plan_name}</td>
+                  <td>
+                    <StatusPill value={subscription.status} />
+                  </td>
+                  <td>
+                    {subscription.current_period_ends_at
+                      ? shortDate(subscription.current_period_ends_at)
+                      : subscription.trial_ends_at
+                        ? shortDate(subscription.trial_ends_at)
+                        : "-"}
+                  </td>
+                  <td>{shortDate(subscription.created_at)}</td>
+                </tr>
+              ))}
+            </Table>
+          ) : (
+            <Empty>No subscriptions found.</Empty>
+          )}
+        </Panel>
+      </div>
+    </>
+  );
+}
+
 function PlatformSettingsScreen() {
+  const now = new Date().toISOString();
+
   return (
     <>
       <PageHeader
         title="Platform Settings"
-        subtitle="System-wide configuration"
+        subtitle="Control-center conventions and platform access boundaries"
       />
-      <Panel title="Settings">
-        <Empty>Platform settings coming soon.</Empty>
-      </Panel>
+      <div className="grid two">
+        <Panel title="Boundary Rules">
+          <Table headers={["Area", "Scope"]}>
+            <tr>
+              <td>Platform admin</td>
+              <td>Companies, plans, billing, sync health, queue health, support tooling</td>
+            </tr>
+            <tr>
+              <td>Tenant admin</td>
+              <td>Campaigns, gifts, customers, imports, integrations, claims, reports</td>
+            </tr>
+          </Table>
+        </Panel>
+        <Panel title="Runtime">
+          <div className="grid two">
+            <Stat label="Mode" value="Platform" />
+            <Stat label="Snapshot" value={shortDateTime(now)} />
+          </div>
+          <div className="muted" style={{ marginTop: 16 }}>
+            Platform pages intentionally exclude tenant business navigation and tenant-only
+            data widgets.
+          </div>
+        </Panel>
+      </div>
     </>
   );
 }
@@ -810,6 +1154,8 @@ function PlatformCompaniesScreen() {
   const companies = useResource(() => apiRequest<Company[]>("/companies"), [], []);
   const [form, setForm] = useState({
     company_name: "",
+    company_slug: "",
+    owner_full_name: "",
     owner_email: "",
     owner_password: "",
   });
@@ -825,12 +1171,26 @@ function PlatformCompaniesScreen() {
     setError(null);
     setNotice(null);
     try {
-      const response = await apiRequest<AuthTokenResponse>("/auth/register-company", {
+      const response = await apiRequest<CompanyProvisionResponse>("/companies", {
         method: "POST",
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          company_name: form.company_name,
+          company_slug: form.company_slug || null,
+          owner_full_name: form.owner_full_name || null,
+          owner_email: form.owner_email,
+          owner_password: form.owner_password,
+        }),
       });
-      setNotice(`Company ${response.company?.name ?? form.company_name} created.`);
-      setForm({ company_name: "", owner_email: "", owner_password: "" });
+      setNotice(
+        `${response.company.name} provisioned. Tenant admin login: ${response.login_path}`,
+      );
+      setForm({
+        company_name: "",
+        company_slug: "",
+        owner_full_name: "",
+        owner_email: "",
+        owner_password: "",
+      });
       companies.reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -841,7 +1201,7 @@ function PlatformCompaniesScreen() {
     <>
       <PageHeader
         title="Companies"
-        subtitle="Monitor company accounts and open their admin panels."
+        subtitle="Provision tenants, assign owner credentials, and hand off login access."
         actions={<IconButton icon={RefreshCw} label="Refresh" onClick={companies.reload} />}
       />
       {error ? <Notice kind="error">{error}</Notice> : null}
@@ -857,7 +1217,7 @@ function PlatformCompaniesScreen() {
         <Panel title="Company Accounts">
           {companies.loading ? <Loading /> : null}
           {companies.error ? <Notice kind="error">{companies.error}</Notice> : null}
-          <Table headers={["Name", "Slug", "Status", "Actions"]}>
+          <Table headers={["Name", "Slug", "Status", "Access"]}>
             {companies.data.map((company) => (
               <tr key={company.id}>
                 <td>
@@ -871,12 +1231,12 @@ function PlatformCompaniesScreen() {
                   <div className="actions">
                     <IconButton
                       icon={ChevronRight}
-                      label="Open admin"
-                      onClick={() => window.location.assign(`/${company.slug}/admin`)}
+                      label="Open tenant login"
+                      onClick={() => window.location.assign(`/${company.slug}/login`)}
                     />
                     <IconButton
                       icon={ArrowLeft}
-                      label="Open user portal"
+                      label="Open customer portal"
                       onClick={() => window.location.assign(`/${company.slug}/portal`)}
                     />
                   </div>
@@ -895,6 +1255,25 @@ function PlatformCompaniesScreen() {
                   setForm({ ...form, company_name: event.target.value })
                 }
                 required
+              />
+            </Field>
+            <Field label="Company Slug">
+              <input
+                className="input"
+                value={form.company_slug}
+                onChange={(event) =>
+                  setForm({ ...form, company_slug: event.target.value.toLowerCase() })
+                }
+                placeholder="acme-loyalty"
+              />
+            </Field>
+            <Field label="Owner Full Name">
+              <input
+                className="input"
+                value={form.owner_full_name}
+                onChange={(event) =>
+                  setForm({ ...form, owner_full_name: event.target.value })
+                }
               />
             </Field>
             <Field label="Admin Email">
@@ -3011,7 +3390,9 @@ function getAppMode(): AppMode {
     return { kind: "platform-admin" };
   }
 
-  const companyAdminMatch = pathname.match(/^\/([^/]+)\/(login|admin|users)(?:\/.*)?$/);
+  const companyAdminMatch = pathname.match(
+    /^\/([^/]+)\/(login|admin|campaigns|gift-tiers|customers|imports|integrations|claims|reports|operations)(?:\/.*)?$/,
+  );
   if (companyAdminMatch?.[1]) {
     return { kind: "company-admin", companySlug: companyAdminMatch[1] };
   }
@@ -3032,6 +3413,7 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
   const [route, setRouteState] = useState<TenantRouteKey>(currentRoute);
   const [session, setSession] = useState<MeResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [langKey, setLangKey] = useState(0); // Force re-render on language change
 
   useEffect(() => {
@@ -3051,7 +3433,23 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
       return;
     }
     me()
-      .then(setSession)
+      .then((current) => {
+        if (current.role === "platform_admin") {
+          clearTokens();
+          setSession(null);
+          setError("Tenant admin access is required for company dashboards.");
+          return;
+        }
+        if (!companySlug && current.company?.slug) {
+          window.history.replaceState(null, "", `/${current.company.slug}/admin`);
+          setRouteState("dashboard");
+        }
+        if (companySlug && current.company?.slug && current.company.slug !== companySlug) {
+          window.history.replaceState(null, "", `/${current.company.slug}/admin`);
+          setRouteState("dashboard");
+        }
+        setSession(current);
+      })
       .catch(() => {
         clearTokens();
         setSession(null);
@@ -3083,9 +3481,6 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
     }
     if (route === "customers") {
       return <CustomersProgressScreen />;
-    }
-    if (route === "users") {
-      return <UsersScreen />;
     }
     if (route === "imports") {
       return <ImportsScreen />;
@@ -3123,12 +3518,18 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
   }
 
   if (!session) {
+    const loginPath = companySlug ? `/${companySlug}/login` : "/login";
+    if (companySlug && window.location.pathname !== loginPath) {
+      window.history.replaceState(null, "", loginPath);
+    }
     return (
       <LoginScreen
         onLogin={(nextSession) => {
+          setError(null);
           setSession(nextSession);
-          if (companySlug) {
-            window.history.replaceState(null, "", `/${companySlug}/admin`);
+          const targetSlug = nextSession.company?.slug ?? companySlug;
+          if (targetSlug) {
+            window.history.replaceState(null, "", `/${targetSlug}/admin`);
           }
         }}
         title={companySlug ? `${companySlug} admin console` : "Company Admin Console"}
@@ -3137,21 +3538,21 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
             ? `Sign in to manage ${companySlug} operations.`
             : "Sign in to manage company operations."
         }
+        externalError={error}
         companySlug={companySlug}
       />
     );
   }
 
   return (
-    <Shell
+    <TenantLayout
       session={session}
-      route={route as string}
-      setRoute={(r) => setRoute(r as TenantRouteKey)}
+      route={route}
+      setRoute={setRoute}
       onLogout={handleLogout}
-      routeMeta={tenantRouteMeta}
     >
       {screen}
-    </Shell>
+    </TenantLayout>
   );
 }
 
