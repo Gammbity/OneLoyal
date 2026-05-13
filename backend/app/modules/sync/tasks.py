@@ -1,15 +1,15 @@
-import asyncio
 from typing import Any
 from uuid import UUID
 
 from app.db.session import AsyncSessionLocal
 from app.modules.sync.service import sync_service
+from app.workers.async_runtime import run_celery_async
 from app.workers.celery_app import celery_app
 
 
 @celery_app.task(name="app.sync.execute")
 def sync_integration_task(sync_run_id: str) -> dict[str, Any]:
-    return asyncio.run(_execute_sync_integration_task(UUID(sync_run_id)))
+    return run_celery_async(_execute_sync_integration_task(UUID(sync_run_id)))
 
 
 async def _execute_sync_integration_task(sync_run_id: UUID) -> dict[str, Any]:
@@ -28,7 +28,7 @@ async def _execute_sync_integration_task(sync_run_id: UUID) -> dict[str, Any]:
 
 @celery_app.task(name="app.sync.schedule_due")
 def schedule_due_integrations_task() -> dict[str, Any]:
-    return asyncio.run(_schedule_due_integrations_task())
+    return run_celery_async(_schedule_due_integrations_task())
 
 
 async def _schedule_due_integrations_task() -> dict[str, Any]:

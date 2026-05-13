@@ -1,11 +1,13 @@
 import logging
 from datetime import timedelta
+from contextlib import suppress
 from uuid import UUID
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.datetime import utc_now
+from app.core.redis import get_redis_client
 from app.core.settings import get_settings
 from app.modules.events.models import DomainEvent, DomainEventStatus
 from app.modules.integrations.models import Integration, IntegrationStatus
@@ -169,6 +171,21 @@ class SyncRecoveryService:
         q_deadline = now - timedelta(minutes=q_timeout)
         r_deadline = now - timedelta(minutes=r_timeout)
 
+        stale_running_filters = [
+            SyncRun.status == SyncRunStatus.RUNNING.value,
+            SyncRun.started_at < r_deadline,
+        ]
+        if company_id:
+            stale_running_filters.append(SyncRun.company_id == company_id)
+
+        stale_running_integration_ids = list(
+            (
+                await session.execute(
+                    select(SyncRun.integration_id).where(*stale_running_filters)
+                )
+            ).scalars().all()
+        )
+
         # Recover QUEUED
         q_filters = [
             SyncRun.status == SyncRunStatus.QUEUED.value,
@@ -216,6 +233,12 @@ class SyncRecoveryService:
                 f"Recovered stuck sync runs: {recovered_q} queued, {recovered_r} running. "
                 f"Company: {company_id or 'global'}"
             )
+
+        if stale_running_integration_ids:
+            redis = get_redis_client()
+            for integration_id in stale_running_integration_ids:
+                with suppress(Exception):
+                    await redis.delete(f"sync:integration:{integration_id}")
 
         return RecoverStuckSyncsResponse(
             checked_count=recovered_q + recovered_r,  # simplified

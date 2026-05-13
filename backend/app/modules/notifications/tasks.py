@@ -1,14 +1,14 @@
-import asyncio
 from typing import Any
 
 from app.db.session import AsyncSessionLocal
 from app.modules.notifications.service import notification_service
+from app.workers.async_runtime import run_celery_async
 from app.workers.celery_app import celery_app
 
 
 @celery_app.task(name="app.notifications.process_domain_events")
 def process_domain_events_task() -> dict[str, Any]:
-    return asyncio.run(_process_domain_events())
+    return run_celery_async(_process_domain_events())
 
 
 async def _process_domain_events() -> dict[str, Any]:
@@ -20,7 +20,7 @@ async def _process_domain_events() -> dict[str, Any]:
 
 @celery_app.task(name="app.notifications.process_notification_events")
 def process_notification_events_task() -> dict[str, Any]:
-    return asyncio.run(_process_notification_events())
+    return run_celery_async(_process_notification_events())
 
 
 async def _process_notification_events() -> dict[str, Any]:

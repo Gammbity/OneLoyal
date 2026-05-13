@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 
 from app.db.session import AsyncSessionLocal
@@ -6,12 +5,13 @@ from app.modules.ops.service import (
     notification_recovery_service,
     sync_recovery_service,
 )
+from app.workers.async_runtime import run_celery_async
 from app.workers.celery_app import celery_app
 
 
 @celery_app.task(name="app.ops.recover_stuck_syncs")
 def recover_stuck_syncs_task() -> dict[str, Any]:
-    return asyncio.run(_recover_stuck_syncs())
+    return run_celery_async(_recover_stuck_syncs())
 
 
 async def _recover_stuck_syncs() -> dict[str, Any]:
@@ -23,7 +23,7 @@ async def _recover_stuck_syncs() -> dict[str, Any]:
 
 @celery_app.task(name="app.ops.recover_notifications")
 def recover_notifications_task() -> dict[str, Any]:
-    return asyncio.run(_recover_notifications())
+    return run_celery_async(_recover_notifications())
 
 
 async def _recover_notifications() -> dict[str, Any]:
