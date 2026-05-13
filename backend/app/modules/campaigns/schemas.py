@@ -68,7 +68,9 @@ class CampaignResponse(BaseModel):
 
 class GiftTierCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
+    title_i18n: dict[str, str] | None = None
     description: str | None = None
+    description_i18n: dict[str, str] | None = None
     required_amount_minor: int = Field(gt=0)
     image_url: str | None = Field(default=None, max_length=2048)
     stock_tracking_mode: StockTrackingMode = StockTrackingMode.NONE
@@ -78,7 +80,9 @@ class GiftTierCreateRequest(BaseModel):
 
 class GiftTierUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
+    title_i18n: dict[str, str] | None = None
     description: str | None = None
+    description_i18n: dict[str, str] | None = None
     required_amount_minor: int | None = Field(default=None, gt=0)
     image_url: str | None = Field(default=None, max_length=2048)
     stock_tracking_mode: StockTrackingMode | None = None
@@ -91,7 +95,9 @@ class GiftTierResponse(BaseModel):
     company_id: UUID
     campaign_id: UUID
     title: str
+    title_i18n: dict[str, str] | None = None
     description: str | None
+    description_i18n: dict[str, str] | None = None
     required_amount_minor: int
     currency: str
     image_url: str | None

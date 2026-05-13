@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.pagination import PaginationParams
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.modules.campaigns.models import Campaign, CampaignStatus, GiftTier
+from app.common.i18n import get_localized_value, ensure_i18n_defaults
 from app.modules.campaigns.schemas import (
     CampaignCreateRequest,
     CampaignUpdateRequest,
@@ -79,7 +80,9 @@ class CampaignService:
         campaign = Campaign(
             company_id=company_id,
             title=data.title.strip(),
+            title_i18n=ensure_i18n_defaults(data.title.strip()),
             description=data.description,
+            description_i18n=ensure_i18n_defaults(data.description),
             start_date=data.start_date,
             end_date=data.end_date,
             status=CampaignStatus.DRAFT.value,
@@ -168,6 +171,14 @@ class CampaignService:
                 value = {}
             if field == "title" and value is not None:
                 value = value.strip()
+                # keep english default in title_i18n
+                if getattr(campaign, "title_i18n", None) is None:
+                    campaign.title_i18n = {}
+                campaign.title_i18n["en"] = value
+            if field == "description" and value is not None:
+                if getattr(campaign, "description_i18n", None) is None:
+                    campaign.description_i18n = {}
+                campaign.description_i18n["en"] = value
             setattr(campaign, field, value)
 
         await session.flush()
@@ -384,11 +395,16 @@ class GiftTierService:
             required_amount_minor=data.required_amount_minor,
         )
 
+        # prefer explicit i18n maps if provided
+        title_i18n = getattr(data, "title_i18n", None) or ensure_i18n_defaults(data.title.strip())
+        description_i18n = getattr(data, "description_i18n", None) or ensure_i18n_defaults(data.description)
         tier = GiftTier(
             company_id=company_id,
             campaign_id=campaign_id,
-            title=data.title.strip(),
+            title=(data.title.strip() if data.title else (title_i18n.get("en") if title_i18n else "")),
+            title_i18n=title_i18n,
             description=data.description,
+            description_i18n=description_i18n,
             required_amount_minor=data.required_amount_minor,
             currency=campaign.currency,
             image_url=data.image_url,
@@ -480,6 +496,11 @@ class GiftTierService:
         for field, value in update_data.items():
             if field == "title" and value is not None:
                 value = value.strip()
+                if getattr(tier, "title_i18n", None) is None:
+                    tier.title_i18n = {}
+                tier.title_i18n["en"] = value
+            if field == "title_i18n" and value is not None:
+                tier.title_i18n = value
             if field == "stock_tracking_mode" and value is not None:
                 value = value.value
             setattr(tier, field, value)

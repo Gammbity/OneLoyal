@@ -78,6 +78,8 @@ export type GiftTier = {
   available_quantity: number | null;
   sort_order: number;
   is_active: boolean;
+  title_i18n?: Record<string, string> | null;
+  description_i18n?: Record<string, string> | null;
 };
 
 export type Customer = {

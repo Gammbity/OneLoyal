@@ -55,6 +55,9 @@ class Campaign(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    # i18n translation maps: {"en": "...", "uz": "..."}
+    title_i18n: Mapped[dict[str, str]] = mapped_column(JSON, default=dict, nullable=False)
+    description_i18n: Mapped[dict[str, str] | None] = mapped_column(JSON)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -116,6 +119,9 @@ class GiftTier(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    # i18n translation maps
+    title_i18n: Mapped[dict[str, str]] = mapped_column(JSON, default=dict, nullable=False)
+    description_i18n: Mapped[dict[str, str] | None] = mapped_column(JSON)
     required_amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(2048))

@@ -3,6 +3,7 @@ import type {
   MeResponse,
   PortalSessionResponse,
 } from "./types";
+import { getLocale } from "./i18n";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -127,6 +128,13 @@ export async function apiRequest<T>(
     });
   }
 
+  // Request localized responses from the backend when available
+  try {
+    headers.set("X-Locale", getLocale());
+  } catch (err) {
+    // ignore if i18n not available
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
@@ -159,6 +167,13 @@ export async function portalApiRequest<T>(
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
     }
+  }
+
+  // Request localized responses from the backend when available
+  try {
+    headers.set("X-Locale", getLocale());
+  } catch (err) {
+    // ignore if i18n not available
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {

@@ -25,6 +25,7 @@ from app.modules.campaigns.schemas import (
     GiftTierUpdateRequest,
 )
 from app.modules.campaigns.service import campaign_service, gift_tier_service
+from app.common.i18n import get_localized_value
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -62,6 +63,10 @@ async def create_campaign(
         },
     )
     await session.commit()
+    # localize before returning
+    locale = getattr(request.state, "locale", "en")
+    campaign.title = get_localized_value(campaign.title_i18n, locale) or campaign.title
+    campaign.description = get_localized_value(campaign.description_i18n, locale) or campaign.description
     return CampaignResponse.model_validate(campaign)
 
 
@@ -69,6 +74,7 @@ async def create_campaign(
 async def list_campaigns(
     current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
     pagination: Annotated[PaginationParams, Depends()],
     status: Annotated[str | None, Query()] = None,
     start_date_from: Annotated[date | None, Query()] = None,
@@ -84,6 +90,10 @@ async def list_campaigns(
         start_date_to=start_date_to,
         search=search,
     )
+    locale = getattr(request.state, "locale", "en")
+    for c in campaigns:
+        c.title = get_localized_value(c.title_i18n, locale) or c.title
+        c.description = get_localized_value(c.description_i18n, locale) or c.description
     return create_paginated_response(
         items=[CampaignResponse.model_validate(campaign) for campaign in campaigns],
         params=pagination,
@@ -96,12 +106,16 @@ async def get_campaign(
     campaign_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> CampaignResponse:
     campaign = await campaign_service.get_campaign(
         session,
         company_id=current_user.user.company_id,
         campaign_id=campaign_id,
     )
+    locale = getattr(request.state, "locale", "en")
+    campaign.title = get_localized_value(campaign.title_i18n, locale) or campaign.title
+    campaign.description = get_localized_value(campaign.description_i18n, locale) or campaign.description
     return CampaignResponse.model_validate(campaign)
 
 
@@ -156,6 +170,9 @@ async def update_campaign(
         },
     )
     await session.commit()
+    locale = getattr(request.state, "locale", "en")
+    campaign.title = get_localized_value(campaign.title_i18n, locale) or campaign.title
+    campaign.description = get_localized_value(campaign.description_i18n, locale) or campaign.description
     return CampaignResponse.model_validate(campaign)
 
 
@@ -356,6 +373,9 @@ async def create_gift_tier(
         },
     )
     await session.commit()
+    locale = getattr(request.state, "locale", "en")
+    tier.title = get_localized_value(tier.title_i18n, locale) or tier.title
+    tier.description = get_localized_value(tier.description_i18n, locale) or tier.description
     return GiftTierResponse.model_validate(tier)
 
 
@@ -370,6 +390,10 @@ async def list_gift_tiers(
         company_id=current_user.user.company_id,
         campaign_id=campaign_id,
     )
+    locale = getattr(request.state, "locale", "en")
+    for t in tiers:
+        t.title = get_localized_value(t.title_i18n, locale) or t.title
+        t.description = get_localized_value(t.description_i18n, locale) or t.description
     return [GiftTierResponse.model_validate(tier) for tier in tiers]
 
 
@@ -389,6 +413,9 @@ async def get_gift_tier(
         campaign_id=campaign_id,
         tier_id=tier_id,
     )
+    locale = getattr(request.state, "locale", "en")
+    tier.title = get_localized_value(tier.title_i18n, locale) or tier.title
+    tier.description = get_localized_value(tier.description_i18n, locale) or tier.description
     return GiftTierResponse.model_validate(tier)
 
 
@@ -445,6 +472,9 @@ async def update_gift_tier(
         },
     )
     await session.commit()
+    locale = getattr(request.state, "locale", "en")
+    tier.title = get_localized_value(tier.title_i18n, locale) or tier.title
+    tier.description = get_localized_value(tier.description_i18n, locale) or tier.description
     return GiftTierResponse.model_validate(tier)
 
 
@@ -526,4 +556,8 @@ async def reorder_gift_tiers(
         after_json={"tier_ids": [str(tier_id) for tier_id in data.tier_ids]},
     )
     await session.commit()
+    locale = getattr(request.state, "locale", "en")
+    for t in tiers:
+        t.title = get_localized_value(t.title_i18n, locale) or t.title
+        t.description = get_localized_value(t.description_i18n, locale) or t.description
     return [GiftTierResponse.model_validate(tier) for tier in tiers]

@@ -44,6 +44,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(
+        # Locale middleware reads X-Locale or Accept-Language and sets request.state.locale
+        __import__("app.core.middleware", fromlist=["LocaleMiddleware"]).LocaleMiddleware
+    )
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
 

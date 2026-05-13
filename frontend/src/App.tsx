@@ -1754,8 +1754,12 @@ function GiftTiersScreen() {
   );
   const [campaignId, setCampaignId] = useState("");
   const [editingId, setEditingId] = useState<ID | null>(null);
+  const [editLocale, setEditLocale] = useState(getLanguage());
   const [form, setForm] = useState({
     title: "",
+    // translations map
+    title_i18n: { en: "", uz: "", ru: "" } as Record<string, string>,
+    description_i18n: { en: "", uz: "", ru: "" } as Record<string, string>,
     required_amount_minor: "1000000",
     stock_tracking_mode: "none",
     stock_quantity: "",
@@ -1786,6 +1790,8 @@ function GiftTiersScreen() {
     setEditingId(null);
     setForm({
       title: "",
+      title_i18n: { en: "", uz: "", ru: "" },
+      description_i18n: { en: "", uz: "", ru: "" },
       required_amount_minor: "1000000",
       stock_tracking_mode: "none",
       stock_quantity: "",
@@ -1797,6 +1803,8 @@ function GiftTiersScreen() {
     setEditingId(tier.id);
     setForm({
       title: tier.title,
+      title_i18n: tier.title_i18n ?? { en: tier.title, uz: "", ru: "" },
+      description_i18n: tier.description_i18n ?? { en: tier.description ?? "", uz: "", ru: "" },
       required_amount_minor: String(tier.required_amount_minor),
       stock_tracking_mode: tier.stock_tracking_mode,
       stock_quantity: tier.stock_quantity === null ? "" : String(tier.stock_quantity),
@@ -1809,13 +1817,20 @@ function GiftTiersScreen() {
     if (!campaignId) {
       return;
     }
-    const payload = {
+    const payload: any = {
       title: form.title,
       required_amount_minor: Number(form.required_amount_minor),
       stock_tracking_mode: form.stock_tracking_mode,
       stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : null,
       is_active: form.is_active,
     };
+    // include translations if any provided
+    if (form.title_i18n && Object.values(form.title_i18n).some((v) => v && v.trim() !== "")) {
+      payload.title_i18n = form.title_i18n;
+    }
+    if (form.description_i18n && Object.values(form.description_i18n).some((v) => v && v.trim() !== "")) {
+      payload.description_i18n = form.description_i18n;
+    }
     setError(null);
     setNotice(null);
     try {
@@ -1921,15 +1936,48 @@ function GiftTiersScreen() {
         <Panel title={editingId ? t("gift_tiers.edit_tier") : t("gift_tiers.new_tier") }>
           <form className="form-grid" onSubmit={saveTier}>
             <Field label={t("gift_tiers.field.title")}>
-              <input
-                className="input"
-                value={form.title}
-                onChange={(event) =>
-                  setForm({ ...form, title: event.target.value })
-                }
-                required
-              />
+                  <input
+                    className="input"
+                    value={form.title}
+                    onChange={(event) =>
+                      setForm({ ...form, title: event.target.value })
+                    }
+                    required
+                  />
+                  <div style={{ marginTop: 8 }}>
+                    <label style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#999" }}>Edit translation locale</label>
+                    <select
+                      className="select"
+                      value={editLocale}
+                      onChange={(e) => setEditLocale(e.target.value as "en" | "uz" | "ru")}
+                      style={{ width: 160 }}
+                    >
+                      <option value="en">English</option>
+                      <option value="uz">Oʻzbekcha</option>
+                      <option value="ru">Русский</option>
+                    </select>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <input
+                      className="input"
+                      placeholder={`Title (${editLocale})`}
+                      value={form.title_i18n[editLocale] ?? ""}
+                      onChange={(e) =>
+                        setForm({ ...form, title_i18n: { ...form.title_i18n, [editLocale]: e.target.value } })
+                      }
+                    />
+                  </div>
             </Field>
+                <Field label="Description (translation)">
+                  <textarea
+                    className="textarea"
+                    placeholder={`Description (${editLocale})`}
+                    value={form.description_i18n[editLocale] ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, description_i18n: { ...form.description_i18n, [editLocale]: e.target.value } })
+                    }
+                  />
+                </Field>
             <Field label={t("gift_tiers.field.required_amount")}>
               <input
                 className="input"
