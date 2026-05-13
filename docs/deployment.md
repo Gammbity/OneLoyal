@@ -97,6 +97,14 @@ To run migrations manually:
 docker compose -f docker-compose.prod.yml run --rm migrate
 ```
 
+### Localization / i18n
+- The API reads `X-Locale` first and falls back to `Accept-Language`.
+- Company names and integration names now support multilingual JSON fields.
+- Translation endpoints:
+  - `PATCH /api/v1/companies/{company_id}/translations`
+  - `PATCH /api/v1/integrations/{integration_id}/translations`
+- When deploying to a fresh database, run the latest migrations before starting the API so the new `*_i18n` columns exist.
+
 ### Backups
 Recommended backup strategy for PostgreSQL:
 ```bash

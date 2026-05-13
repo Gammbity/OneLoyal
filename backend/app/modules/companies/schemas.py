@@ -10,6 +10,7 @@ from app.modules.users.schemas import UserResponse
 class CompanyResponse(BaseModel):
     id: UUID
     name: str
+    name_i18n: dict[str, str]
     slug: str
     status: str
     base_currency: str
@@ -38,6 +39,10 @@ class CreateCompanyRequest(BaseModel):
                 "slug may contain only lowercase letters, numbers, and hyphens"
             )
         return normalized
+
+
+class CompanyTranslationsUpdateRequest(BaseModel):
+    name_i18n: dict[str, str] = Field(default_factory=dict)
 
 
 class CompanyProvisionResponse(BaseModel):

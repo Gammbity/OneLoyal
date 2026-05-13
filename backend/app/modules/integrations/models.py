@@ -43,6 +43,7 @@ class Integration(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_i18n: Mapped[dict[str, str]] = mapped_column(JSON, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32),
         default=IntegrationStatus.DRAFT.value,

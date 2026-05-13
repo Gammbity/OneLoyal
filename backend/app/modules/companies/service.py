@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.core.security import hash_password
 from app.core.settings import get_settings
+from app.common.i18n import ensure_i18n_defaults
 from app.modules.billing.service import billing_service
 from app.modules.companies.models import Company, CompanySettings
-from app.modules.companies.schemas import UpdateCompanySettingsRequest
+from app.modules.companies.schemas import CompanyTranslationsUpdateRequest, UpdateCompanySettingsRequest
 from app.modules.users.models import User, UserRole, UserStatus
 
 
@@ -91,7 +92,12 @@ class CompanyService:
         email = owner_email.strip().lower()
         await self.ensure_slug_available(session, slug)
 
-        company = Company(name=company_name.strip(), slug=slug)
+        normalized_name = company_name.strip()
+        company = Company(
+            name=normalized_name,
+            name_i18n=ensure_i18n_defaults(normalized_name) or {},
+            slug=slug,
+        )
         session.add(company)
         await session.flush()
 
@@ -130,6 +136,18 @@ class CompanyService:
             setattr(settings, field, value)
         await session.flush()
         return settings
+
+    async def update_company_translations(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID,
+        data: CompanyTranslationsUpdateRequest,
+    ) -> Company:
+        company = await self.get_company(session, company_id)
+        company.name_i18n = data.name_i18n or ensure_i18n_defaults(company.name) or {}
+        await session.flush()
+        return company
 
 
 company_service = CompanyService()

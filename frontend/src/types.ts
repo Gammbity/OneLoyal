@@ -15,6 +15,7 @@ export type Paginated<T> = {
 export type Company = {
   id: ID;
   name: string;
+  name_i18n?: Record<string, string> | null;
   slug: string;
   base_currency: string;
   timezone: string;
@@ -154,6 +155,7 @@ export type Integration = {
   id: ID;
   provider: string;
   name: string;
+  name_i18n?: Record<string, string> | null;
   status: string;
   settings_json: Record<string, unknown>;
   last_attempted_sync_at: string | null;

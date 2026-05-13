@@ -1,10 +1,12 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
+from app.common.i18n import get_localized_value
 from app.db.session import get_db
 from app.modules.audit.context import audit_context_from_request
 from app.modules.audit.service import audit_log_service
@@ -20,6 +22,7 @@ from app.modules.companies.schemas import (
     CompanyResponse,
     CompanySettingsResponse,
     CreateCompanyRequest,
+    CompanyTranslationsUpdateRequest,
     UpdateCompanySettingsRequest,
 )
 from app.modules.companies.service import company_service
@@ -32,9 +35,13 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 async def list_companies(
     current_user: Annotated[AuthenticatedUser, Depends(require_platform_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> list[CompanyResponse]:
     result = await session.execute(select(Company).order_by(Company.created_at.desc()))
     companies = result.scalars().all()
+    locale = getattr(request.state, "locale", "en")
+    for company in companies:
+        company.name = get_localized_value(company.name_i18n, locale) or company.name
     return [CompanyResponse.model_validate(company) for company in companies]
 
 
@@ -43,6 +50,7 @@ async def create_company(
     data: CreateCompanyRequest,
     current_user: Annotated[AuthenticatedUser, Depends(require_platform_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> CompanyProvisionResponse:
     company, _, owner = await company_service.create_company_with_owner(
         session,
@@ -53,6 +61,8 @@ async def create_company(
         owner_password=data.owner_password,
     )
     await session.commit()
+    locale = getattr(request.state, "locale", "en")
+    company.name = get_localized_value(company.name_i18n, locale) or company.name
     return CompanyProvisionResponse(
         company=CompanyResponse.model_validate(company),
         owner=UserResponse.model_validate(owner),
@@ -63,10 +73,50 @@ async def create_company(
 @router.get("/me", response_model=CompanyResponse)
 async def get_my_company(
     current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
+    request: Request,
 ) -> CompanyResponse:
     if current_user.company is None:
         raise NotFoundError("Company not found.")
+    locale = getattr(request.state, "locale", "en")
+    current_user.company.name = (
+        get_localized_value(current_user.company.name_i18n, locale)
+        or current_user.company.name
+    )
     return CompanyResponse.model_validate(current_user.company)
+
+
+@router.patch("/{company_id}/translations", response_model=CompanyResponse)
+async def update_company_translations(
+    company_id: UUID,
+    data: CompanyTranslationsUpdateRequest,
+    current_user: Annotated[AuthenticatedUser, Depends(require_platform_admin)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
+) -> CompanyResponse:
+    before = await company_service.get_company(session, company_id)
+    updated = await company_service.update_company_translations(
+        session,
+        company_id=company_id,
+        data=data,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=company_id,
+        action="company.translations.updated",
+        entity_type="company",
+        entity_id=company_id,
+        context=audit_context_from_request(
+            request,
+            actor_user_id=current_user.user.id,
+            actor_type="user",
+        ),
+        before_json={"name": before.name, "name_i18n": before.name_i18n},
+        after_json={"name": updated.name, "name_i18n": updated.name_i18n},
+    )
+    await session.commit()
+    locale = getattr(request.state, "locale", "en")
+    updated.name = get_localized_value(updated.name_i18n, locale) or updated.name
+    return CompanyResponse.model_validate(updated)
 
 
 @router.get("/me/settings", response_model=CompanySettingsResponse)

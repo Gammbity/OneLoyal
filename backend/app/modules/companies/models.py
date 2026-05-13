@@ -31,6 +31,7 @@ class Company(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_i18n: Mapped[dict[str, str]] = mapped_column(JSON, default=dict, nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(
         String(32),

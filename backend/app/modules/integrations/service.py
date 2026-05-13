@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.datetime import utc_now
 from app.core.errors import NotFoundError, ValidationAppError
 from app.core.security import decrypt_secret, encrypt_secret
+from app.common.i18n import ensure_i18n_defaults
 from app.modules.integrations.models import (
     Integration,
     IntegrationCredential,
@@ -20,6 +21,7 @@ from app.modules.integrations.providers.base import (
 from app.modules.integrations.providers.registry import provider_registry
 from app.modules.integrations.schemas import (
     IntegrationCreateRequest,
+    IntegrationTranslationsUpdateRequest,
     IntegrationUpdateRequest,
 )
 
@@ -61,6 +63,7 @@ class IntegrationService:
             company_id=company_id,
             provider=provider,
             name=data.name.strip(),
+            name_i18n=ensure_i18n_defaults(data.name.strip()) or {},
             status=IntegrationStatus.DRAFT.value,
             settings_json=data.settings_json or {},
             sync_cursor_json={},
@@ -76,6 +79,23 @@ class IntegrationService:
                 credentials_json=data.credentials_json,
             )
 
+        await session.flush()
+        return integration
+
+    async def update_integration_translations(
+        self,
+        session: AsyncSession,
+        *,
+        company_id: UUID,
+        integration_id: UUID,
+        data: IntegrationTranslationsUpdateRequest,
+    ) -> Integration:
+        integration = await self.get_integration(
+            session,
+            company_id=company_id,
+            integration_id=integration_id,
+        )
+        integration.name_i18n = data.name_i18n or ensure_i18n_defaults(integration.name) or {}
         await session.flush()
         return integration
 

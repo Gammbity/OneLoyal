@@ -384,6 +384,7 @@ async def list_gift_tiers(
     campaign_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> list[GiftTierResponse]:
     tiers = await gift_tier_service.list_tiers(
         session,
@@ -406,6 +407,7 @@ async def get_gift_tier(
     tier_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_company_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> GiftTierResponse:
     tier = await gift_tier_service.get_tier(
         session,

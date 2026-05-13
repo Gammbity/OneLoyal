@@ -126,6 +126,14 @@ Inside Docker Compose:
 docker compose run --rm api alembic upgrade head
 ```
 
+## Localization / i18n
+
+- The API uses `X-Locale` or `Accept-Language` to localize list/detail responses.
+- Companies and integrations store translated names in JSONB `name_i18n` columns.
+- Translation management endpoints:
+  - `PATCH /api/v1/companies/{company_id}/translations`
+  - `PATCH /api/v1/integrations/{integration_id}/translations`
+
 ## Tests
 
 ```bash

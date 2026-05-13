@@ -37,7 +37,7 @@ import {
   me,
   query,
 } from "./api";
-import { t, loadLanguage, setLanguage, getLanguage } from "./i18n";
+import { t, loadLanguage, setLanguage, getLanguage, type Language } from "./i18n";
 import type {
   Company,
   Campaign,
@@ -110,6 +110,66 @@ const emptyPage = <T,>(): Paginated<T> => ({
   pagination: { limit: 50, offset: 0, total: 0, has_more: false },
 });
 
+const supportedLocales: Language[] = ["en", "uz", "ru"];
+
+function emptyTranslationMap(baseValue = ""): Record<Language, string> {
+  return {
+    en: baseValue,
+    uz: "",
+    ru: "",
+  };
+}
+
+function normalizeTranslationMap(
+  translations: Record<string, string> | null | undefined,
+  fallback = "",
+): Record<Language, string> {
+  return {
+    en: translations?.en?.trim() || fallback,
+    uz: translations?.uz?.trim() || "",
+    ru: translations?.ru?.trim() || "",
+  };
+}
+
+function TranslationEditorBlock({
+  label,
+  value,
+  locale,
+  onLocaleChange,
+  onValueChange,
+}: {
+  label: string;
+  value: Record<Language, string>;
+  locale: Language;
+  onLocaleChange: (locale: Language) => void;
+  onValueChange: (value: Record<Language, string>) => void;
+}) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <div className="form-grid two" style={{ gap: 12 }}>
+        <select
+          className="select"
+          value={locale}
+          onChange={(event) => onLocaleChange(event.target.value as Language)}
+        >
+          <option value="en">English</option>
+          <option value="uz">Oʻzbekcha</option>
+          <option value="ru">Русский</option>
+        </select>
+        <input
+          className="input"
+          value={value[locale] ?? ""}
+          onChange={(event) =>
+            onValueChange({ ...value, [locale]: event.target.value })
+          }
+          placeholder={`${label} (${locale})`}
+        />
+      </div>
+    </div>
+  );
+}
+
 // TENANT BUSINESS MODULES - ONLY for company admins
 const tenantRouteMeta: Array<{
   key: TenantRouteKey;
@@ -130,14 +190,14 @@ const tenantRouteMeta: Array<{
 // PLATFORM SYSTEM ROUTES - ONLY for platform admin
 const platformRouteMeta: Array<{
   key: PlatformRouteKey;
-  label: string;
+  labelKey: string;
   icon: LucideIcon;
 }> = [
-  { key: "admin", label: "Platform Overview", icon: LayoutDashboard },
-  { key: "companies", label: "Companies", icon: Users },
-  { key: "billing", label: "Billing & Plans", icon: BarChart3 },
-  { key: "ops", label: "Platform Ops", icon: Activity },
-  { key: "settings", label: "Settings", icon: Archive },
+  { key: "admin", labelKey: "platform.nav.admin", icon: LayoutDashboard },
+  { key: "companies", labelKey: "platform.nav.companies", icon: Users },
+  { key: "billing", labelKey: "platform.nav.billing", icon: BarChart3 },
+  { key: "ops", labelKey: "platform.nav.ops", icon: Activity },
+  { key: "settings", labelKey: "platform.nav.settings", icon: Archive },
 ];
 
 function errorMessage(error: unknown): string {
@@ -571,7 +631,7 @@ function PlatformLayout({
                 onClick={() => setRoute(item.key)}
               >
                 <Icon size={18} />
-                {item.label}
+                {t(item.labelKey)}
               </button>
             );
           })}
@@ -761,9 +821,9 @@ function PlatformAdminApp() {
     return (
       <LoginScreen
         onLogin={handleLogin}
-        title="Platform Admin Console"
-        subtitle="Sign in to monitor companies and manage platform resources."
-        buttonLabel="Sign in"
+        title={t("platform.title")}
+        subtitle={t("platform.subtitle")}
+        buttonLabel={t("auth.login_button")}
         expectedRole="platform_admin"
         roleMismatchMessage="Platform admin access is required."
         externalError={error}
@@ -835,17 +895,17 @@ function PlatformOverviewScreen() {
   return (
     <>
       <PageHeader
-        title="Platform Overview"
-        subtitle="Global SaaS ownership metrics across companies, plans, and workers"
-        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={overview.reload} />}
+        title={t("platform.overview.title")}
+        subtitle={t("platform.overview.subtitle")}
+        actions={<IconButton icon={RefreshCw} label={t("common.refresh")} onClick={overview.reload} />}
       />
       {overview.loading ? <Loading /> : null}
       {overview.error ? <Notice kind="error">{overview.error}</Notice> : null}
       <div className="grid four">
-        <Stat label="Companies" value={overview.data.summary.company_count} />
-        <Stat label="Active tenants" value={overview.data.summary.active_tenant_count} />
+        <Stat label={t("platform.overview.companies")} value={overview.data.summary.company_count} />
+        <Stat label={t("platform.overview.activeTenants")} value={overview.data.summary.active_tenant_count} />
         <Stat
-          label="Subscriptions"
+          label={t("platform.overview.subscriptions")}
           value={overview.data.summary.subscription_count}
         />
         <Stat
@@ -948,9 +1008,9 @@ function PlatformOpsScreen() {
   return (
     <>
       <PageHeader
-        title="Platform Ops"
-        subtitle="Worker, queue, and sync health across every tenant"
-        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={overview.reload} />}
+        title={t("platform.ops.title")}
+        subtitle={t("platform.ops.subtitle")}
+        actions={<IconButton icon={RefreshCw} label={t("common.refresh")} onClick={overview.reload} />}
       />
       {overview.loading ? <Loading /> : null}
       {overview.error ? <Notice kind="error">{overview.error}</Notice> : null}
@@ -1040,23 +1100,23 @@ function PlatformBillingScreen() {
   return (
     <>
       <PageHeader
-        title="Billing & Plans"
-        subtitle="Subscription health, plan coverage, and company billing visibility"
-        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={billing.reload} />}
+        title={t("platform.billing.title")}
+        subtitle={t("platform.billing.subtitle")}
+        actions={<IconButton icon={RefreshCw} label={t("common.refresh")} onClick={billing.reload} />}
       />
       {billing.loading ? <Loading /> : null}
       {billing.error ? <Notice kind="error">{billing.error}</Notice> : null}
       <div className="grid four">
-        <Stat label="Subscriptions" value={billing.data.summary.subscription_count} />
+        <Stat label={t("platform.overview.subscriptions")} value={billing.data.summary.subscription_count} />
         <Stat
-          label="Active"
+          label={t("platform.overview.activeSubscriptions")}
           value={billing.data.summary.active_subscription_count}
         />
         <Stat
-          label="Trialing"
+          label={t("platform.overview.trialingSubscriptions")}
           value={billing.data.summary.trialing_subscription_count}
         />
-        <Stat label="Past due" value={billing.data.summary.past_due_subscription_count} />
+        <Stat label={t("platform.overview.pastDueSubscriptions")} value={billing.data.summary.past_due_subscription_count} />
       </div>
       <div style={{ height: 14 }} />
       <div className="grid two">
@@ -1119,8 +1179,8 @@ function PlatformSettingsScreen() {
   return (
     <>
       <PageHeader
-        title="Platform Settings"
-        subtitle="Control-center conventions and platform access boundaries"
+        title={t("platform.settings.title")}
+        subtitle={t("platform.settings.subtitle")}
       />
       <div className="grid two">
         <Panel title="Boundary Rules">
@@ -1161,10 +1221,49 @@ function PlatformCompaniesScreen() {
   });
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingCompanyId, setEditingCompanyId] = useState<ID | null>(null);
+  const [companyEditLocale, setCompanyEditLocale] = useState<Language>(getLanguage());
+  const [companyTranslations, setCompanyTranslations] = useState<Record<Language, string>>(
+    emptyTranslationMap(),
+  );
 
   const activeCount = companies.data.filter(
     (company) => company.status === "active",
   ).length;
+  const editingCompany = companies.data.find((company) => company.id === editingCompanyId) ?? null;
+
+  function openCompanyTranslations(company: Company) {
+    setEditingCompanyId(company.id);
+    setCompanyEditLocale(getLanguage());
+    setCompanyTranslations(normalizeTranslationMap(company.name_i18n, company.name));
+    setError(null);
+    setNotice(null);
+  }
+
+  function cancelCompanyTranslations() {
+    setEditingCompanyId(null);
+    setCompanyTranslations(emptyTranslationMap());
+  }
+
+  async function saveCompanyTranslations(event: FormEvent) {
+    event.preventDefault();
+    if (!editingCompanyId) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    try {
+      await apiRequest<Company>(`/companies/${editingCompanyId}/translations`, {
+        method: "PATCH",
+        body: JSON.stringify({ name_i18n: companyTranslations }),
+      });
+      setNotice("Company translations updated.");
+      cancelCompanyTranslations();
+      companies.reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
 
   async function createCompany(event: FormEvent) {
     event.preventDefault();
@@ -1200,15 +1299,15 @@ function PlatformCompaniesScreen() {
   return (
     <>
       <PageHeader
-        title="Companies"
-        subtitle="Provision tenants, assign owner credentials, and hand off login access."
-        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={companies.reload} />}
+        title={t("platform.companies.title")}
+        subtitle={t("platform.companies.subtitle")}
+        actions={<IconButton icon={RefreshCw} label={t("common.refresh")} onClick={companies.reload} />}
       />
       {error ? <Notice kind="error">{error}</Notice> : null}
       {notice ? <Notice kind="success">{notice}</Notice> : null}
       <div className="grid four">
-        <Stat label="Companies" value={companies.data.length} />
-        <Stat label="Active" value={activeCount} />
+        <Stat label={t("platform.overview.companies")} value={companies.data.length} />
+        <Stat label={t("campaigns.active")} value={activeCount} />
         <Stat label="Disabled" value={companies.data.length - activeCount} />
         <Stat label="Total" value={companies.data.length} />
       </div>
@@ -1229,6 +1328,11 @@ function PlatformCompaniesScreen() {
                 </td>
                 <td>
                   <div className="actions">
+                    <IconButton
+                      icon={FileText}
+                      label={t("common.editTranslations")}
+                      onClick={() => openCompanyTranslations(company)}
+                    />
                     <IconButton
                       icon={ChevronRight}
                       label="Open tenant login"
@@ -1302,6 +1406,29 @@ function PlatformCompaniesScreen() {
           </form>
         </Panel>
       </div>
+      {editingCompany ? (
+        <>
+          <div style={{ height: 14 }} />
+          <Panel title={t("company.translations.title")}>
+            <form className="form-grid" onSubmit={saveCompanyTranslations}>
+              <div className="muted">{t("company.translations.subtitle")}</div>
+              <TranslationEditorBlock
+                label={t("company.translations.field")}
+                value={companyTranslations}
+                locale={companyEditLocale}
+                onLocaleChange={setCompanyEditLocale}
+                onValueChange={setCompanyTranslations}
+              />
+              <div className="actions">
+                <Button icon={Check}>{t("common.saveTranslations")}</Button>
+                <Button icon={X} type="button" variant="secondary" onClick={cancelCompanyTranslations}>
+                  {t("common.cancel")}
+                </Button>
+              </div>
+            </form>
+          </Panel>
+        </>
+      ) : null}
     </>
   );
 }
@@ -1441,80 +1568,80 @@ function DashboardScreen() {
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        subtitle="Company activity at a glance"
+        title={t("nav.dashboard")}
+        subtitle={t("dashboard.subtitle")}
         actions={
           <IconButton
             icon={RefreshCw}
-            label="Refresh"
+            label={t("common.refresh")}
             onClick={dashboard.reload}
           />
         }
       />
       {dashboard.error ? <Notice kind="error">{dashboard.error}</Notice> : null}
       <div className="grid four">
-        <Stat label="Campaigns" value={dashboard.data.campaigns.pagination.total ?? 0} />
-        <Stat label="Active" value={activeCampaigns} />
+        <Stat label={t("campaigns.title")} value={dashboard.data.campaigns.pagination.total ?? 0} />
+        <Stat label={t("campaigns.active")} value={activeCampaigns} />
         <Stat
-          label="Customers"
+          label={t("customers.title")}
           value={dashboard.data.customers.pagination.total ?? 0}
         />
         <Stat
-          label="Pending claims"
+          label={t("dashboard.pendingClaims")}
           value={dashboard.data.claims?.summary.pending ?? 0}
         />
       </div>
       <div style={{ height: 14 }} />
       <div className="grid two">
-        <Panel title="Current Campaign">
+        <Panel title={t("dashboard.currentCampaign")}>
           {dashboard.loading ? <Loading /> : null}
           {dashboard.data.overview ? (
             <div className="grid three">
               <Stat
-                label="Customers"
+                label={t("customers.title")}
                 value={dashboard.data.overview.total_customers_with_progress}
               />
               <Stat
-                label="Purchase amount"
+                label={t("campaigns.purchaseAmount")}
                 value={money(
                   dashboard.data.overview.total_purchase_amount_minor,
                   dashboard.data.overview.currency,
                 )}
               />
               <Stat
-                label="Fulfilled claims"
+                label={t("dashboard.fulfilledClaims")}
                 value={dashboard.data.overview.total_fulfilled_claims}
               />
             </div>
           ) : (
-            <Empty>No campaign data.</Empty>
+            <Empty>{t("dashboard.noCampaignData")}</Empty>
           )}
         </Panel>
-        <Panel title="Sync Health">
+        <Panel title={t("campaigns.syncHealth")}>
           {dashboard.data.sync ? (
             <div className="grid three">
               <Stat
-                label="Integrations"
+                label={t("integrations.title")}
                 value={dashboard.data.sync.summary.total_integrations}
               />
               <Stat
-                label="Failed"
+                label={t("campaigns.failed")}
                 value={dashboard.data.sync.summary.failed_runs}
               />
               <Stat
-                label="Partial"
+                label={t("campaigns.partial")}
                 value={dashboard.data.sync.summary.partially_failed_runs}
               />
             </div>
           ) : (
-            <Empty>No sync data.</Empty>
+            <Empty>{t("dashboard.noSyncData")}</Empty>
           )}
         </Panel>
       </div>
       <div style={{ height: 14 }} />
       <div className="grid two">
-        <Panel title="Recent Campaigns">
-          <Table headers={["Title", "Status", "Dates", "Currency"]}>
+        <Panel title={t("campaigns.recentCampaigns")}>
+          <Table headers={[t("campaigns.titleColumn"), t("campaigns.statusColumn"), t("campaigns.datesColumn"), t("campaigns.currencyColumn")] }>
             {dashboard.data.campaigns.items.slice(0, 6).map((campaign) => (
               <tr key={campaign.id}>
                 <td>{campaign.title}</td>
@@ -1529,9 +1656,9 @@ function DashboardScreen() {
             ))}
           </Table>
         </Panel>
-        <Panel title="Recent Claims">
+        <Panel title={t("campaigns.recentClaims")}>
           {dashboard.data.claims?.items.length ? (
-            <Table headers={["Customer", "Campaign", "Gift", "Status"]}>
+            <Table headers={[t("customers.title"), t("campaigns.title"), t("gift_tiers.title"), t("common.status")] }>
               {dashboard.data.claims.items.map((claim) => (
                 <tr key={claim.claim_id}>
                   <td>{claim.customer_name}</td>
@@ -1544,7 +1671,7 @@ function DashboardScreen() {
               ))}
             </Table>
           ) : (
-            <Empty>No claims.</Empty>
+            <Empty>{t("dashboard.noClaims")}</Empty>
           )}
         </Panel>
       </div>
@@ -1579,7 +1706,7 @@ function CampaignsScreen() {
         body: JSON.stringify(form),
       });
       setForm((current) => ({ ...current, title: "", description: "" }));
-      setNotice("Campaign created.");
+      setNotice(t("campaigns.created"));
       campaigns.reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -1603,19 +1730,25 @@ function CampaignsScreen() {
   return (
     <>
       <PageHeader
-        title="Campaigns"
-        subtitle="Lifecycle, dates, currency, and claim availability"
+        title={t("campaigns.dashTitle")}
+        subtitle={t("campaigns.subtitle")}
         actions={
-          <IconButton icon={RefreshCw} label="Refresh" onClick={campaigns.reload} />
+          <IconButton icon={RefreshCw} label={t("common.refresh")} onClick={campaigns.reload} />
         }
       />
       <div className="split">
-        <Panel title="Campaign List">
+        <Panel title={t("campaigns.list")}>
           {campaigns.loading ? <Loading /> : null}
           {campaigns.error ? <Notice kind="error">{campaigns.error}</Notice> : null}
           {notice ? <Notice kind="success">{notice}</Notice> : null}
           {error ? <Notice kind="error">{error}</Notice> : null}
-          <Table headers={["Title", "Status", "Dates", "Claims", "Actions"]}>
+          <Table headers={[
+            t("campaigns.titleColumn"),
+            t("campaigns.statusColumn"),
+            t("campaigns.datesColumn"),
+            t("campaigns.claimsColumn"),
+            t("campaigns.actionsColumn"),
+          ]}>
             {campaigns.data.items.map((campaign) => (
               <tr key={campaign.id}>
                 <td>
@@ -1629,34 +1762,34 @@ function CampaignsScreen() {
                   {shortDate(campaign.start_date)} - {shortDate(campaign.end_date)}
                   <div className="muted">{campaign.currency}</div>
                 </td>
-                <td>{campaign.allow_claims ? "Enabled" : "Disabled"}</td>
+                <td>{campaign.allow_claims ? t("campaigns.claimsEnabled") : t("campaigns.claimsDisabled")}</td>
                 <td>
                   <div className="actions">
                     {["draft", "paused"].includes(campaign.status) ? (
                       <IconButton
                         icon={Play}
-                        label="Activate"
+                        label={t("campaigns.activate")}
                         onClick={() => campaignAction(campaign, "activate")}
                       />
                     ) : null}
                     {campaign.status === "active" ? (
                       <IconButton
                         icon={Pause}
-                        label="Pause"
+                        label={t("campaigns.pause")}
                         onClick={() => campaignAction(campaign, "pause")}
                       />
                     ) : null}
                     {["active", "paused"].includes(campaign.status) ? (
                       <IconButton
                         icon={Check}
-                        label="Complete"
+                        label={t("campaigns.complete")}
                         onClick={() => campaignAction(campaign, "complete")}
                       />
                     ) : null}
                     {["draft", "completed"].includes(campaign.status) ? (
                       <IconButton
                         icon={Archive}
-                        label="Archive"
+                        label={t("campaigns.archive")}
                         onClick={() => campaignAction(campaign, "archive")}
                       />
                     ) : null}
@@ -1666,9 +1799,9 @@ function CampaignsScreen() {
             ))}
           </Table>
         </Panel>
-        <Panel title="New Campaign">
+        <Panel title={t("campaigns.newCampaign")}>
           <form className="form-grid" onSubmit={createCampaign}>
-            <Field label="Title">
+            <Field label={t("campaigns.titleColumn")}>
               <input
                 className="input"
                 value={form.title}
@@ -1678,7 +1811,7 @@ function CampaignsScreen() {
                 required
               />
             </Field>
-            <Field label="Description">
+            <Field label={t("common.translationValue")}>
               <textarea
                 className="textarea"
                 value={form.description}
@@ -1688,7 +1821,7 @@ function CampaignsScreen() {
               />
             </Field>
             <div className="form-grid two">
-              <Field label="Start">
+              <Field label={t("campaigns.startDate")}>
                 <input
                   className="input"
                   type="date"
@@ -1699,7 +1832,7 @@ function CampaignsScreen() {
                   required
                 />
               </Field>
-              <Field label="End">
+              <Field label={t("campaigns.endDate")}>
                 <input
                   className="input"
                   type="date"
@@ -1712,7 +1845,7 @@ function CampaignsScreen() {
               </Field>
             </div>
             <div className="form-grid two">
-              <Field label="Currency">
+              <Field label={t("campaigns.currency")}>
                 <input
                   className="input"
                   value={form.currency}
@@ -1722,7 +1855,7 @@ function CampaignsScreen() {
                   maxLength={3}
                 />
               </Field>
-              <Field label="Claims">
+              <Field label={t("campaigns.claimsColumn")}>
                 <select
                   className="select"
                   value={form.allow_claims ? "true" : "false"}
@@ -1733,12 +1866,12 @@ function CampaignsScreen() {
                     })
                   }
                 >
-                  <option value="true">Enabled</option>
-                  <option value="false">Disabled</option>
+                  <option value="true">{t("campaigns.claimsEnabled")}</option>
+                  <option value="false">{t("campaigns.claimsDisabled")}</option>
                 </select>
               </Field>
             </div>
-            <Button icon={Plus}>Create campaign</Button>
+            <Button icon={Plus}>{t("campaigns.create")}</Button>
           </form>
         </Panel>
       </div>
@@ -2473,6 +2606,11 @@ function IntegrationsSyncScreen() {
   const [selectedIntegrationId, setSelectedIntegrationId] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingIntegrationId, setEditingIntegrationId] = useState<ID | null>(null);
+  const [integrationEditLocale, setIntegrationEditLocale] = useState<Language>(getLanguage());
+  const [integrationTranslations, setIntegrationTranslations] = useState<
+    Record<Language, string>
+  >(emptyTranslationMap());
   const integrations = useResource(
     () => apiRequest<Integration[]>("/integrations"),
     [],
@@ -2497,6 +2635,42 @@ function IntegrationsSyncScreen() {
       setSelectedIntegrationId(integrations.data[0].id);
     }
   }, [integrations.data, selectedIntegrationId]);
+
+  const editingIntegration =
+    integrations.data.find((integration) => integration.id === editingIntegrationId) ?? null;
+
+  function openIntegrationTranslations(integration: Integration) {
+    setEditingIntegrationId(integration.id);
+    setIntegrationEditLocale(getLanguage());
+    setIntegrationTranslations(normalizeTranslationMap(integration.name_i18n, integration.name));
+    setError(null);
+    setNotice(null);
+  }
+
+  function cancelIntegrationTranslations() {
+    setEditingIntegrationId(null);
+    setIntegrationTranslations(emptyTranslationMap());
+  }
+
+  async function saveIntegrationTranslations(event: FormEvent) {
+    event.preventDefault();
+    if (!editingIntegrationId) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    try {
+      await apiRequest<Integration>(`/integrations/${editingIntegrationId}/translations`, {
+        method: "PATCH",
+        body: JSON.stringify({ name_i18n: integrationTranslations }),
+      });
+      setNotice("Integration translations updated.");
+      cancelIntegrationTranslations();
+      integrations.reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
 
   async function createIntegration(event: FormEvent) {
     event.preventDefault();
@@ -2615,6 +2789,11 @@ function IntegrationsSyncScreen() {
                   <td>
                     <div className="actions">
                       <IconButton
+                        icon={FileText}
+                        label={t("common.editTranslations")}
+                        onClick={() => openIntegrationTranslations(integration)}
+                      />
+                      <IconButton
                         icon={Activity}
                         label="Test"
                         onClick={() => integrationAction(integration, "test")}
@@ -2720,6 +2899,31 @@ function IntegrationsSyncScreen() {
             <Button icon={Plus}>Create integration</Button>
           </form>
         </Panel>
+        {editingIntegration ? (
+          <Panel title={t("integration.translations.title")}>
+            <form className="form-grid" onSubmit={saveIntegrationTranslations}>
+              <div className="muted">{t("integration.translations.subtitle")}</div>
+              <TranslationEditorBlock
+                label={t("integration.translations.field")}
+                value={integrationTranslations}
+                locale={integrationEditLocale}
+                onLocaleChange={setIntegrationEditLocale}
+                onValueChange={setIntegrationTranslations}
+              />
+              <div className="actions">
+                <Button icon={Check}>{t("common.saveTranslations")}</Button>
+                <Button
+                  icon={X}
+                  type="button"
+                  variant="secondary"
+                  onClick={cancelIntegrationTranslations}
+                >
+                  {t("common.cancel")}
+                </Button>
+              </div>
+            </form>
+          </Panel>
+        ) : null}
       </div>
     </>
   );

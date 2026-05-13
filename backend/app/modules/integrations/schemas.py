@@ -26,6 +26,7 @@ class IntegrationResponse(BaseModel):
     company_id: UUID
     provider: str
     name: str
+    name_i18n: dict[str, str]
     status: str
     settings_json: dict[str, Any]
     last_attempted_sync_at: datetime | None
@@ -44,3 +45,7 @@ class IntegrationTestResponse(BaseModel):
     ok: bool
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class IntegrationTranslationsUpdateRequest(BaseModel):
+    name_i18n: dict[str, str] = Field(default_factory=dict)

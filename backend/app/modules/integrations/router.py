@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.common.i18n import get_localized_value
 from app.modules.audit.context import audit_context_from_request
 from app.modules.audit.service import audit_log_service
 from app.modules.auth.dependencies import require_owner_or_admin
@@ -14,6 +15,7 @@ from app.modules.integrations.schemas import (
     IntegrationResponse,
     IntegrationTestResponse,
     IntegrationUpdateRequest,
+    IntegrationTranslationsUpdateRequest,
 )
 from app.modules.integrations.service import integration_service
 from app.modules.sync.schemas import SyncEnqueueResponse
@@ -25,7 +27,9 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 async def _integration_response(
     session: AsyncSession,
     integration,
+    locale: str = "en",
 ) -> IntegrationResponse:
+    integration.name = get_localized_value(integration.name_i18n, locale) or integration.name
     response = IntegrationResponse.model_validate(integration)
     return response.model_copy(
         update={
@@ -67,22 +71,22 @@ async def create_integration(
         },
     )
     await session.commit()
-    return await _integration_response(session, integration)
+    locale = getattr(request.state, "locale", "en")
+    return await _integration_response(session, integration, locale)
 
 
 @router.get("", response_model=list[IntegrationResponse])
 async def list_integrations(
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> list[IntegrationResponse]:
     integrations = await integration_service.list_integrations(
         session,
         company_id=current_user.user.company_id,
     )
-    return [
-        await _integration_response(session, integration)
-        for integration in integrations
-    ]
+    locale = getattr(request.state, "locale", "en")
+    return [await _integration_response(session, integration, locale) for integration in integrations]
 
 
 @router.get("/{integration_id}", response_model=IntegrationResponse)
@@ -90,13 +94,15 @@ async def get_integration(
     integration_id: UUID,
     current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
 ) -> IntegrationResponse:
     integration = await integration_service.get_integration(
         session,
         company_id=current_user.user.company_id,
         integration_id=integration_id,
     )
-    return await _integration_response(session, integration)
+    locale = getattr(request.state, "locale", "en")
+    return await _integration_response(session, integration, locale)
 
 
 @router.patch("/{integration_id}", response_model=IntegrationResponse)
@@ -143,7 +149,46 @@ async def update_integration(
         },
     )
     await session.commit()
-    return await _integration_response(session, integration)
+    locale = getattr(request.state, "locale", "en")
+    return await _integration_response(session, integration, locale)
+
+
+@router.patch("/{integration_id}/translations", response_model=IntegrationResponse)
+async def update_integration_translations(
+    integration_id: UUID,
+    data: IntegrationTranslationsUpdateRequest,
+    current_user: Annotated[AuthenticatedUser, Depends(require_owner_or_admin)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
+) -> IntegrationResponse:
+    before = await integration_service.get_integration(
+        session,
+        company_id=current_user.user.company_id,
+        integration_id=integration_id,
+    )
+    updated = await integration_service.update_integration_translations(
+        session,
+        company_id=current_user.user.company_id,
+        integration_id=integration_id,
+        data=data,
+    )
+    await audit_log_service.record(
+        session,
+        company_id=current_user.user.company_id,
+        action="integration.translations.updated",
+        entity_type="integration",
+        entity_id=updated.id,
+        context=audit_context_from_request(
+            request,
+            actor_user_id=current_user.user.id,
+            actor_type="user",
+        ),
+        before_json={"name": before.name, "name_i18n": before.name_i18n},
+        after_json={"name": updated.name, "name_i18n": updated.name_i18n},
+    )
+    await session.commit()
+    locale = getattr(request.state, "locale", "en")
+    return await _integration_response(session, updated, locale)
 
 
 @router.delete("/{integration_id}", status_code=204)
