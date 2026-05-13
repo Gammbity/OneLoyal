@@ -11,6 +11,7 @@ from app.modules.auth.schemas import (
     LogoutRequest,
     LogoutResponse,
     MeResponse,
+    PlatformLoginRequest,
     RefreshTokenRequest,
     RegisterCompanyRequest,
 )
@@ -45,8 +46,21 @@ async def login(
 ) -> AuthTokenResponse:
     return await auth_service.login(
         session,
-        email=data.email,
-        password=data.password,
+        data=data,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=_client_ip(request),
+    )
+
+
+@router.post("/platform-login", response_model=AuthTokenResponse)
+async def platform_login(
+    data: PlatformLoginRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> AuthTokenResponse:
+    return await auth_service.platform_login(
+        session,
+        data=data,
         user_agent=request.headers.get("user-agent"),
         ip_address=_client_ip(request),
     )

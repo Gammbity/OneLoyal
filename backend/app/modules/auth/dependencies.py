@@ -2,7 +2,7 @@ from collections.abc import Callable
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    tenant_slug: Annotated[str | None, Header(alias="X-Tenant-Slug")] = None,
 ) -> AuthenticatedUser:
     if credentials is None:
         raise UnauthorizedError("Authentication required.")
@@ -45,6 +46,26 @@ async def get_current_user(
         raise UnauthorizedError("User account is not active.")
     if user.company_id is not None and user.company is None:
         raise UnauthorizedError("User company is not available.")
+
+    scope = payload.get("scope")
+    token_company_id = payload.get("company_id")
+    token_company_slug = payload.get("company_slug")
+
+    if user.role == UserRole.PLATFORM_ADMIN.value:
+        if scope not in {None, "platform"}:
+            raise UnauthorizedError("Invalid platform token scope.")
+    else:
+        if scope not in {None, "tenant"}:
+            raise UnauthorizedError("Invalid tenant token scope.")
+        if token_company_id is not None:
+            if str(user.company_id) != str(token_company_id):
+                raise UnauthorizedError("Tenant token company mismatch.")
+        if token_company_slug is not None:
+            if user.company is None or user.company.slug != str(token_company_slug):
+                raise UnauthorizedError("Tenant token company mismatch.")
+        if tenant_slug is not None:
+            if user.company is None or user.company.slug != tenant_slug:
+                raise UnauthorizedError("Tenant route company mismatch.")
 
     return AuthenticatedUser(user=user, company=user.company)
 

@@ -1,5 +1,5 @@
-from uuid import UUID
 import re
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,9 +15,15 @@ from app.modules.users.models import User, UserRole, UserStatus
 
 def normalize_slug(value: str) -> str:
     normalized = value.strip().lower()
-    if not normalized.replace("-", "").isalnum():
+    reserved_slugs = {"platform", "admin", "api", "login", "portal"}
+    if not normalized or not normalized.replace("-", "").isalnum():
         raise ValidationAppError(
             message="Company slug may contain only letters, numbers, and hyphens.",
+            details={"field": "company_slug"},
+        )
+    if normalized in reserved_slugs:
+        raise ValidationAppError(
+            message="Company slug is reserved.",
             details={"field": "company_slug"},
         )
     return normalized
@@ -84,10 +90,6 @@ class CompanyService:
         slug = normalize_slug(slug_source)
         email = owner_email.strip().lower()
         await self.ensure_slug_available(session, slug)
-
-        user_result = await session.execute(select(User.id).where(User.email == email))
-        if user_result.scalar_one_or_none() is not None:
-            raise ConflictError("Email is already in use.", details={"field": "email"})
 
         company = Company(name=company_name.strip(), slug=slug)
         session.add(company)

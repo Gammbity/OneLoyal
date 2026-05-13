@@ -7,15 +7,35 @@ import type {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-const ACCESS_TOKEN_KEY = "oneloyal.access_token";
-const REFRESH_TOKEN_KEY = "oneloyal.refresh_token";
+const PLATFORM_ACCESS_TOKEN_KEY = "oneloyal.platform.access_token";
+const PLATFORM_REFRESH_TOKEN_KEY = "oneloyal.platform.refresh_token";
+const TENANT_ACCESS_TOKEN_KEY = "oneloyal.tenant.access_token";
+const TENANT_REFRESH_TOKEN_KEY = "oneloyal.tenant.refresh_token";
 const PORTAL_TOKEN_KEY = "one_loyal_portal_token";
+
+type AuthContext = "platform" | "tenant";
+
+function getAuthContext(): AuthContext {
+  return window.location.pathname.startsWith("/platform") ? "platform" : "tenant";
+}
+
+function getTokenKeys(context: AuthContext): { access: string; refresh: string } {
+  return context === "platform"
+    ? {
+        access: PLATFORM_ACCESS_TOKEN_KEY,
+        refresh: PLATFORM_REFRESH_TOKEN_KEY,
+      }
+    : {
+        access: TENANT_ACCESS_TOKEN_KEY,
+        refresh: TENANT_REFRESH_TOKEN_KEY,
+      };
+}
 
 function getPortalAccessPath(): string {
   const path = window.location.pathname;
-  const companyMatch = path.match(/^\/([^/]+)\/user(?:\/.*)?$/);
+  const companyMatch = path.match(/^\/([^/]+)\/portal(?:\/.*)?$/);
   if (companyMatch?.[1]) {
-    return `/${companyMatch[1]}/user/access`;
+    return `/${companyMatch[1]}/portal/access`;
   }
   return "/portal/access";
 }
@@ -33,21 +53,25 @@ export class ApiError extends Error {
 }
 
 export function getStoredAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return localStorage.getItem(getTokenKeys(getAuthContext()).access);
 }
 
 export function getStoredRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  return localStorage.getItem(getTokenKeys(getAuthContext()).refresh);
 }
 
 export function storeTokens(tokens: AuthTokenResponse): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+  const context = getAuthContext();
+  const tokenKeys = getTokenKeys(context);
+  localStorage.setItem(tokenKeys.access, tokens.access_token);
+  localStorage.setItem(tokenKeys.refresh, tokens.refresh_token);
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(PLATFORM_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(PLATFORM_REFRESH_TOKEN_KEY);
+  localStorage.removeItem(TENANT_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(TENANT_REFRESH_TOKEN_KEY);
 }
 
 export function getStoredPortalToken(): string | null {
@@ -132,7 +156,7 @@ export async function portalApiRequest<T>(
       clearPortalToken();
       if (
         window.location.pathname.startsWith("/portal") ||
-        /\/[^/]+\/user(?:\/|$)/.test(window.location.pathname)
+        /\/[^/]+\/portal(?:\/|$)/.test(window.location.pathname)
       ) {
         window.history.replaceState(null, "", getPortalAccessPath());
         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -158,8 +182,26 @@ export async function createPortalSession(
   return response;
 }
 
-export async function login(email: string, password: string) {
+export async function login(
+  email: string,
+  password: string,
+  companySlug?: string,
+) {
   const response = await apiRequest<AuthTokenResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      email,
+      password,
+      company_slug: companySlug,
+    }),
+    skipAuth: true,
+  });
+  storeTokens(response);
+  return response;
+}
+
+export async function platformLogin(email: string, password: string) {
+  const response = await apiRequest<AuthTokenResponse>("/auth/platform-login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
     skipAuth: true,

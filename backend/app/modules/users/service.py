@@ -27,12 +27,15 @@ class UserService:
         self,
         session: AsyncSession,
         email: str,
+        *,
+        company_id: UUID | None = None,
     ) -> User | None:
-        result = await session.execute(
-            select(User)
-            .options(selectinload(User.company))
-            .where(User.email == normalize_email(email))
+        query = select(User).options(selectinload(User.company)).where(
+            User.email == normalize_email(email)
         )
+        if company_id is not None:
+            query = query.where(User.company_id == company_id)
+        result = await session.execute(query)
         return result.scalar_one_or_none()
 
     async def get_user(self, session: AsyncSession, user_id: UUID) -> User:
@@ -98,7 +101,7 @@ class UserService:
             )
 
         email = normalize_email(data.email)
-        existing = await self.get_user_by_email(session, email)
+        existing = await self.get_user_by_email(session, email, company_id=company_id)
         if existing is not None:
             raise ConflictError("Email is already in use.", details={"field": "email"})
 

@@ -26,6 +26,7 @@ class Company(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "companies"
     __table_args__ = (
         UniqueConstraint("slug", name="uq_companies_slug"),
+        Index("ix_companies_slug", "slug"),
         Index("ix_companies_status", "status"),
     )
 

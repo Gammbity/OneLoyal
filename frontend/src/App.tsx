@@ -33,6 +33,7 @@ import {
   clearTokens,
   getStoredAccessToken,
   login,
+  platformLogin,
   logout,
   me,
   query,
@@ -64,6 +65,7 @@ import type {
   OpsStatusResponse,
   RecoverStuckSyncsResponse,
   RecoverNotificationsResponse,
+  User,
 } from "./types";
 import {
   asJson,
@@ -76,16 +78,21 @@ import {
 } from "./utils";
 import PortalApp from "./PortalApp";
 
-type RouteKey =
+// TENANT BUSINESS ROUTES (company-admin dashboard)
+type TenantRouteKey =
   | "dashboard"
   | "campaigns"
   | "gift-tiers"
   | "customers"
+  | "users"
   | "imports"
   | "integrations"
   | "claims"
   | "reports"
   | "ops";
+
+// PLATFORM ROUTES (platform-admin system control)
+type PlatformRouteKey = "companies" | "billing" | "platform-ops" | "settings";
 
 type AppMode =
   | { kind: "platform-admin" }
@@ -104,8 +111,9 @@ const emptyPage = <T,>(): Paginated<T> => ({
   pagination: { limit: 50, offset: 0, total: 0, has_more: false },
 });
 
-const routeMeta: Array<{
-  key: RouteKey;
+// TENANT BUSINESS MODULES - ONLY for company admins
+const tenantRouteMeta: Array<{
+  key: TenantRouteKey;
   label: string;
   icon: LucideIcon;
 }> = [
@@ -113,11 +121,24 @@ const routeMeta: Array<{
   { key: "campaigns", label: "Campaigns", icon: Trophy },
   { key: "gift-tiers", label: "Gift Tiers", icon: Gift },
   { key: "customers", label: "Customers", icon: Users },
+  { key: "users", label: "Users", icon: Users },
   { key: "imports", label: "Imports", icon: Upload },
   { key: "integrations", label: "Integrations", icon: PlugZap },
   { key: "claims", label: "Reward Claims", icon: TicketCheck },
   { key: "reports", label: "Reports", icon: BarChart3 },
   { key: "ops", label: "Operations", icon: Activity },
+];
+
+// PLATFORM SYSTEM ROUTES - ONLY for platform admin
+const platformRouteMeta: Array<{
+  key: PlatformRouteKey;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { key: "companies", label: "Companies", icon: Users },
+  { key: "billing", label: "Billing & Plans", icon: BarChart3 },
+  { key: "platform-ops", label: "Platform Ops", icon: Activity },
+  { key: "settings", label: "Settings", icon: Archive },
 ];
 
 function errorMessage(error: unknown): string {
@@ -346,6 +367,29 @@ function CampaignPicker({
   );
 }
 
+function companyAdminPath(companySlug: string | null, route: TenantRouteKey): string {
+  const basePath = companySlug ? `/${companySlug}` : "";
+  if (route === "dashboard") {
+    return `${basePath}/admin`;
+  }
+  return `${basePath}/${route}`;
+}
+
+function parseCompanyRoute(pathname: string): TenantRouteKey {
+  const segments = pathname.split("/").filter(Boolean);
+  const lastSegment = segments[segments.length - 1];
+  if (lastSegment === "campaigns") return "campaigns";
+  if (lastSegment === "gift-tiers") return "gift-tiers";
+  if (lastSegment === "customers") return "customers";
+  if (lastSegment === "users") return "users";
+  if (lastSegment === "imports") return "imports";
+  if (lastSegment === "integrations") return "integrations";
+  if (lastSegment === "claims") return "claims";
+  if (lastSegment === "reports") return "reports";
+  if (lastSegment === "ops") return "ops";
+  return "dashboard";
+}
+
 function LoginScreen({
   onLogin,
   title = "Admin Console",
@@ -354,6 +398,8 @@ function LoginScreen({
   expectedRole,
   roleMismatchMessage = "You do not have access to this panel.",
   externalError,
+  companySlug,
+  loginMode = "tenant",
 }: {
   onLogin: (session: MeResponse) => void;
   title?: string;
@@ -362,6 +408,8 @@ function LoginScreen({
   expectedRole?: string;
   roleMismatchMessage?: string;
   externalError?: string | null;
+  companySlug?: string | null;
+  loginMode?: "tenant" | "platform";
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -373,7 +421,10 @@ function LoginScreen({
     setLoading(true);
     setError(null);
     try {
-      const auth = await login(email, password);
+      const auth =
+        loginMode === "platform"
+          ? await platformLogin(email, password)
+          : await login(email, password, companySlug ?? undefined);
       if (expectedRole && auth.user.role !== expectedRole) {
         clearTokens();
         setError(roleMismatchMessage);
@@ -463,12 +514,14 @@ function Shell({
   setRoute,
   onLogout,
   children,
+  routeMeta: routeMetadata,
 }: {
   session: MeResponse;
-  route: RouteKey;
-  setRoute: (route: RouteKey) => void;
+  route: string;
+  setRoute: (route: string) => void;
   onLogout: () => void;
   children: ReactNode;
+  routeMeta: Array<{ key: string; label: string; icon: LucideIcon }>;
 }) {
   return (
     <div className="app-shell">
@@ -480,7 +533,7 @@ function Shell({
           OneLoyal
         </div>
         <nav className="nav">
-          {routeMeta.map((item) => {
+          {routeMetadata.map((item) => {
             const Icon = item.icon;
             const labelKey = `nav.${item.key.replace("-", ".")}`;
             return (
@@ -529,13 +582,36 @@ function Shell({
   );
 }
 
+function currentPlatformRoute(): PlatformRouteKey {
+  const { pathname } = window.location;
+  if (pathname.includes("/billing")) return "billing";
+  if (pathname.includes("/platform-ops")) return "platform-ops";
+  if (pathname.includes("/settings")) return "settings";
+  return "companies";
+}
+
+function platformPath(route: PlatformRouteKey): string {
+  if (route === "companies") return "/platform/admin";
+  if (route === "billing") return "/platform/billing";
+  if (route === "platform-ops") return "/platform/ops";
+  if (route === "settings") return "/platform/settings";
+  return "/platform/admin";
+}
+
 function PlatformAdminApp() {
+  const [route, setRouteState] = useState<PlatformRouteKey>(currentPlatformRoute);
   const [session, setSession] = useState<MeResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadLanguage();
+  }, []);
+
+  useEffect(() => {
+    const onNavigation = () => setRouteState(currentPlatformRoute());
+    window.addEventListener("popstate", onNavigation);
+    return () => window.removeEventListener("popstate", onNavigation);
   }, []);
 
   useEffect(() => {
@@ -560,15 +636,30 @@ function PlatformAdminApp() {
       .finally(() => setCheckingSession(false));
   }, []);
 
+  function setRoute(nextRoute: PlatformRouteKey) {
+    window.history.pushState(null, "", platformPath(nextRoute));
+    setRouteState(nextRoute);
+  }
+
   async function handleLogin(nextSession: MeResponse) {
     setError(null);
     setSession(nextSession);
+    window.history.replaceState(null, "", "/platform/admin");
   }
 
   async function handleLogout() {
     await logout();
     setSession(null);
+    window.history.replaceState(null, "", "/platform/login");
   }
+
+  const screen = useMemo(() => {
+    if (route === "companies") return <PlatformCompaniesScreen />;
+    if (route === "billing") return <PlatformBillingScreen />;
+    if (route === "platform-ops") return <PlatformOpsScreen />;
+    if (route === "settings") return <PlatformSettingsScreen />;
+    return <PlatformCompaniesScreen />;
+  }, [route]);
 
   if (checkingSession) {
     return (
@@ -592,69 +683,131 @@ function PlatformAdminApp() {
       <LoginScreen
         onLogin={handleLogin}
         title="Platform Admin Console"
-        subtitle="Sign in to monitor companies and create new company accounts."
+        subtitle="Sign in to monitor companies and manage platform resources."
         buttonLabel="Sign in"
         expectedRole="platform_admin"
         roleMismatchMessage="Platform admin access is required."
         externalError={error}
+        loginMode="platform"
       />
     );
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">
-            <ShieldCheck size={20} />
-          </span>
-          OneLoyal
+    <Shell
+      session={session}
+      route={route as string}
+      setRoute={(r) => setRoute(r as PlatformRouteKey)}
+      onLogout={handleLogout}
+      routeMeta={platformRouteMeta}
+    >
+      {screen}
+    </Shell>
+  );
+}
+
+function PlatformOpsScreen() {
+  const ops = useResource(
+    () => apiRequest<OpsStatusResponse>("/ops/status"),
+    [],
+    {
+      company_id: "",
+      sync_runs: {},
+      queued_sync_count: 0,
+      running_sync_count: 0,
+      stuck_queued_sync_count: 0,
+      stuck_running_sync_count: 0,
+      pending_notification_events_count: 0,
+      failed_notification_events_count: 0,
+      pending_domain_events_count: 0,
+      failed_domain_events_count: 0,
+      recent_failed_sync_errors_count: 0,
+      active_integrations_count: 0,
+      scheduled_integrations_count: 0,
+      last_successful_sync_time: null,
+      last_failed_sync_time: null,
+    },
+  );
+
+  return (
+    <>
+      <PageHeader
+        title="Platform Operations"
+        subtitle="System health and worker status"
+        actions={
+          <IconButton
+            icon={RefreshCw}
+            label="Refresh"
+            onClick={ops.reload}
+          />
+        }
+      />
+      {ops.error ? <Notice kind="error">{ops.error}</Notice> : null}
+      <Panel title="Sync Queues">
+        {ops.loading ? <Loading /> : null}
+        <div className="grid four">
+          <Stat label="Queued" value={ops.data.queued_sync_count} />
+          <Stat label="Running" value={ops.data.running_sync_count} />
+          <Stat label="Stuck Queued" value={ops.data.stuck_queued_sync_count} />
+          <Stat label="Stuck Running" value={ops.data.stuck_running_sync_count} />
         </div>
-        <div className="sidebar-footer" style={{ marginTop: 0 }}>
-          <div className="user-block">
-            <strong>{session.user.full_name}</strong>
-            <span>{session.user.email}</span>
-            <span>Platform admin</span>
+      </Panel>
+      <div style={{ height: 14 }} />
+      <div className="grid two">
+        <Panel title="Integration Sync Health">
+          <div className="grid two">
+            <Stat label="Active Integrations" value={ops.data.active_integrations_count} />
+            <Stat label="Scheduled" value={ops.data.scheduled_integrations_count} />
+            <Stat label="Failed Errors" value={ops.data.recent_failed_sync_errors_count} />
+            <Stat
+              label="Last Sync"
+              value={ops.data.last_successful_sync_time ? shortDateTime(ops.data.last_successful_sync_time) : "Never"}
+            />
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <label
-              style={{ display: "block", fontSize: 12, marginBottom: 6, color: "#999" }}
-            >
-              Language
-            </label>
-            <select
-              className="select"
-              value={getLanguage()}
-              onChange={(e) => {
-                setLanguage(e.target.value as "en" | "uz" | "ru");
-                window.location.reload();
-              }}
-              style={{ width: "100%" }}
-            >
-              <option value="en">English</option>
-              <option value="uz">Oʻzbekcha</option>
-              <option value="ru">Русский</option>
-            </select>
+        </Panel>
+        <Panel title="Events">
+          <div className="grid two">
+            <Stat label="Pending Notifications" value={ops.data.pending_notification_events_count} />
+            <Stat label="Failed Notifications" value={ops.data.failed_notification_events_count} />
+            <Stat label="Pending Events" value={ops.data.pending_domain_events_count} />
+            <Stat label="Failed Events" value={ops.data.failed_domain_events_count} />
           </div>
-          <Button icon={LogOut} variant="secondary" onClick={handleLogout}>
-            {t("auth.logout")}
-          </Button>
-        </div>
-      </aside>
-      <main className="main">
-        <PlatformCompaniesScreen />
-        {error ? <Notice kind="error">{error}</Notice> : null}
-      </main>
-    </div>
+        </Panel>
+      </div>
+    </>
+  );
+}
+
+function PlatformBillingScreen() {
+  return (
+    <>
+      <PageHeader
+        title="Billing & Plans"
+        subtitle="Manage company subscriptions and pricing plans"
+      />
+      <Panel title="Plans">
+        <Empty>Billing system coming soon.</Empty>
+      </Panel>
+    </>
+  );
+}
+
+function PlatformSettingsScreen() {
+  return (
+    <>
+      <PageHeader
+        title="Platform Settings"
+        subtitle="System-wide configuration"
+      />
+      <Panel title="Settings">
+        <Empty>Platform settings coming soon.</Empty>
+      </Panel>
+    </>
   );
 }
 
 function PlatformCompaniesScreen() {
-  const companies = useResource(
-    () => apiRequest<Company[]>('/companies'),
-    [],
-    [],
-  );
+  const companies = useResource(() => apiRequest<Company[]>("/companies"), [], []);
   const [form, setForm] = useState({
     company_name: "",
     owner_email: "",
@@ -689,9 +842,7 @@ function PlatformCompaniesScreen() {
       <PageHeader
         title="Companies"
         subtitle="Monitor company accounts and open their admin panels."
-        actions={
-          <IconButton icon={RefreshCw} label="Refresh" onClick={companies.reload} />
-        }
+        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={companies.reload} />}
       />
       {error ? <Notice kind="error">{error}</Notice> : null}
       {notice ? <Notice kind="success">{notice}</Notice> : null}
@@ -726,7 +877,7 @@ function PlatformCompaniesScreen() {
                     <IconButton
                       icon={ArrowLeft}
                       label="Open user portal"
-                      onClick={() => window.location.assign(`/${company.slug}/user`)}
+                      onClick={() => window.location.assign(`/${company.slug}/portal`)}
                     />
                   </div>
                 </td>
@@ -772,6 +923,107 @@ function PlatformCompaniesScreen() {
           </form>
         </Panel>
       </div>
+    </>
+  );
+}
+
+function UsersScreen() {
+  const users = useResource(() => apiRequest<User[]>("/users"), [], []);
+  const [form, setForm] = useState({
+    email: "",
+    full_name: "",
+    password: "",
+    role: "admin",
+  });
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function createUser(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    try {
+      await apiRequest<User>("/users", {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      setNotice(`User ${form.email} created.`);
+      setForm({ email: "", full_name: "", password: "", role: "admin" });
+      users.reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Users"
+        subtitle="Manage company admin and sales accounts."
+        actions={<IconButton icon={RefreshCw} label="Refresh" onClick={users.reload} />}
+      />
+      {error ? <Notice kind="error">{error}</Notice> : null}
+      {notice ? <Notice kind="success">{notice}</Notice> : null}
+      <Panel title="Create user">
+        <form className="form-grid" onSubmit={createUser}>
+          <Field label="Email">
+            <input
+              className="input"
+              type="email"
+              value={form.email}
+              onChange={(event) => setForm({ ...form, email: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Full name">
+            <input
+              className="input"
+              value={form.full_name}
+              onChange={(event) => setForm({ ...form, full_name: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Password">
+            <input
+              className="input"
+              type="password"
+              value={form.password}
+              onChange={(event) => setForm({ ...form, password: event.target.value })}
+              required
+            />
+          </Field>
+          <Field label="Role">
+            <select
+              className="select"
+              value={form.role}
+              onChange={(event) => setForm({ ...form, role: event.target.value })}
+            >
+              <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
+              <option value="sales_manager">Sales manager</option>
+            </select>
+          </Field>
+          <Button icon={Plus}>Create user</Button>
+        </form>
+      </Panel>
+      <Panel title="Company users">
+        {users.loading ? <Loading /> : null}
+        {users.error ? <Notice kind="error">{users.error}</Notice> : null}
+        {users.data.length ? (
+          <Table headers={["Email", "Name", "Role", "Status"]}>
+            {users.data.map((user) => (
+              <tr key={user.id}>
+                <td>{user.email}</td>
+                <td>{user.full_name}</td>
+                <td>{titleCase(user.role)}</td>
+                <td>{titleCase(user.status)}</td>
+              </tr>
+            ))}
+          </Table>
+        ) : (
+          <Empty>No company users yet.</Empty>
+        )}
+      </Panel>
     </>
   );
 }
@@ -2748,23 +3000,23 @@ function OpsScreen() {
   );
 }
 
-function currentRoute(): RouteKey {
-  const value = window.location.hash.replace("#", "") as RouteKey;
-  return routeMeta.some((route) => route.key === value) ? value : "dashboard";
+function currentRoute(): TenantRouteKey {
+  const value = parseCompanyRoute(window.location.pathname);
+  return tenantRouteMeta.some((route) => route.key === value) ? value : "dashboard";
 }
 
 function getAppMode(): AppMode {
   const { pathname } = window.location;
-  if (pathname === "/admin") {
+  if (pathname.startsWith("/platform") || pathname === "/admin") {
     return { kind: "platform-admin" };
   }
 
-  const companyAdminMatch = pathname.match(/^\/([^/]+)\/admin$/);
+  const companyAdminMatch = pathname.match(/^\/([^/]+)\/(login|admin|users)(?:\/.*)?$/);
   if (companyAdminMatch?.[1]) {
     return { kind: "company-admin", companySlug: companyAdminMatch[1] };
   }
 
-  const portalMatch = pathname.match(/^\/([^/]+)\/user(?:\/.*)?$/);
+  const portalMatch = pathname.match(/^\/([^/]+)\/portal(?:\/.*)?$/);
   if (portalMatch?.[1]) {
     return { kind: "portal", companySlug: portalMatch[1] };
   }
@@ -2777,7 +3029,7 @@ function getAppMode(): AppMode {
 }
 
 function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
-  const [route, setRouteState] = useState<RouteKey>(currentRoute);
+  const [route, setRouteState] = useState<TenantRouteKey>(currentRoute);
   const [session, setSession] = useState<MeResponse | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [langKey, setLangKey] = useState(0); // Force re-render on language change
@@ -2788,9 +3040,9 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
   }, []);
 
   useEffect(() => {
-    const onHash = () => setRouteState(currentRoute());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    const onNavigation = () => setRouteState(currentRoute());
+    window.addEventListener("popstate", onNavigation);
+    return () => window.removeEventListener("popstate", onNavigation);
   }, []);
 
   useEffect(() => {
@@ -2807,14 +3059,19 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
       .finally(() => setCheckingSession(false));
   }, []);
 
-  function setRoute(nextRoute: RouteKey) {
-    window.location.hash = nextRoute;
+  function setRoute(nextRoute: TenantRouteKey) {
+    window.history.pushState(
+      null,
+      "",
+      companyAdminPath(companySlug, nextRoute),
+    );
     setRouteState(nextRoute);
   }
 
   async function handleLogout() {
     await logout();
     setSession(null);
+    window.history.replaceState(null, "", companySlug ? `/${companySlug}/login` : "/login");
   }
 
   const screen = useMemo(() => {
@@ -2826,6 +3083,9 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
     }
     if (route === "customers") {
       return <CustomersProgressScreen />;
+    }
+    if (route === "users") {
+      return <UsersScreen />;
     }
     if (route === "imports") {
       return <ImportsScreen />;
@@ -2865,13 +3125,19 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
   if (!session) {
     return (
       <LoginScreen
-        onLogin={setSession}
+        onLogin={(nextSession) => {
+          setSession(nextSession);
+          if (companySlug) {
+            window.history.replaceState(null, "", `/${companySlug}/admin`);
+          }
+        }}
         title={companySlug ? `${companySlug} admin console` : "Company Admin Console"}
         subtitle={
           companySlug
             ? `Sign in to manage ${companySlug} operations.`
             : "Sign in to manage company operations."
         }
+        companySlug={companySlug}
       />
     );
   }
@@ -2879,9 +3145,10 @@ function CompanyAdminApp({ companySlug }: { companySlug: string | null }) {
   return (
     <Shell
       session={session}
-      route={route}
-      setRoute={setRoute}
+      route={route as string}
+      setRoute={(r) => setRoute(r as TenantRouteKey)}
       onLogout={handleLogout}
+      routeMeta={tenantRouteMeta}
     >
       {screen}
     </Shell>

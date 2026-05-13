@@ -25,8 +25,9 @@ class UserStatus(StrEnum):
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("email", name="uq_users_email"),
+        UniqueConstraint("company_id", "email", name="uq_users_company_id_email"),
         Index("ix_users_company_id", "company_id"),
+        Index("ix_users_company_id_email", "company_id", "email"),
         Index("ix_users_role", "role"),
         Index("ix_users_status", "status"),
     )

@@ -46,9 +46,9 @@ type PortalBundle = {
 
 function getPortalBasePath(): string {
   const path = window.location.pathname;
-  const companyMatch = path.match(/^\/([^/]+)\/user(?:\/.*)?$/);
+  const companyMatch = path.match(/^\/([^/]+)\/portal(?:\/.*)?$/);
   if (companyMatch?.[1]) {
-    return `/${companyMatch[1]}/user`;
+    return `/${companyMatch[1]}/portal`;
   }
   return "/portal";
 }

@@ -29,6 +29,24 @@ class RegisterCompanyRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1)
+    company_slug: str | None = Field(default=None, min_length=2, max_length=120)
+
+    @field_validator("company_slug")
+    @classmethod
+    def normalize_company_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not normalized.replace("-", "").isalnum():
+            raise ValueError(
+                "slug may contain only lowercase letters, numbers, and hyphens"
+            )
+        return normalized
+
+
+class PlatformLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1)
 
 
 class RefreshTokenRequest(BaseModel):

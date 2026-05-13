@@ -1,6 +1,5 @@
-from typing import Any
-
 import asyncio
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -97,7 +96,7 @@ def test_platform_admin_can_list_companies(client: TestClient) -> None:
     owner = register_company(client, slug="dusel", owner_email="owner@example.com")
 
     login_response = client.post(
-        "/api/v1/auth/login",
+        "/api/v1/auth/platform-login",
         json={
             "email": "platform@example.com",
             "password": "platform-secret-password",
@@ -116,22 +115,17 @@ def test_platform_admin_can_list_companies(client: TestClient) -> None:
     assert owner["company"]["slug"] in slugs
 
 
-def test_duplicate_email_rejected(client: TestClient) -> None:
-    register_company(client, slug="acme", owner_email="owner@example.com")
-
-    response = client.post(
-        "/api/v1/auth/register-company",
-        json={
-            "company_name": "Other LLC",
-            "company_slug": "other",
-            "owner_full_name": "Other Owner",
-            "owner_email": "owner@example.com",
-            "owner_password": "super-secret-password",
-        },
+def test_same_email_allowed_across_companies(client: TestClient) -> None:
+    first = register_company(client, slug="acme", owner_email="owner@example.com")
+    second = register_company(
+        client,
+        slug="other",
+        owner_email="owner@example.com",
+        company_name="Other LLC",
     )
 
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "conflict"
+    assert first["company"]["slug"] == "acme"
+    assert second["company"]["slug"] == "other"
 
 
 def test_duplicate_slug_rejected(client: TestClient) -> None:
@@ -157,7 +151,11 @@ def test_login_success(client: TestClient) -> None:
 
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "owner@example.com", "password": "super-secret-password"},
+        json={
+            "company_slug": "acme",
+            "email": "owner@example.com",
+            "password": "super-secret-password",
+        },
     )
 
     assert response.status_code == 200
@@ -173,7 +171,11 @@ def test_login_wrong_password_rejected(client: TestClient) -> None:
 
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "owner@example.com", "password": "wrong-password"},
+        json={
+            "company_slug": "acme",
+            "email": "owner@example.com",
+            "password": "wrong-password",
+        },
     )
 
     assert response.status_code == 401
@@ -204,9 +206,30 @@ def test_disabled_user_login_rejected(client: TestClient) -> None:
 
     login_response = client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@example.com", "password": "super-secret-password"},
+        json={
+            "company_slug": "acme",
+            "email": "admin@example.com",
+            "password": "super-secret-password",
+        },
     )
     assert login_response.status_code == 401
+
+
+def test_platform_admin_login_success(client: TestClient) -> None:
+    create_platform_admin(client)
+
+    response = client.post(
+        "/api/v1/auth/platform-login",
+        json={
+            "email": "platform@example.com",
+            "password": "platform-secret-password",
+        },
+    )
+
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+    assert payload["user"]["role"] == "platform_admin"
+    assert payload["company"] is None
 
 
 def test_refresh_rotates_token(client: TestClient) -> None:
@@ -280,7 +303,11 @@ def test_role_check_rejects_sales_manager(client: TestClient) -> None:
     )
     login_response = client.post(
         "/api/v1/auth/login",
-        json={"email": "sales@example.com", "password": "super-secret-password"},
+        json={
+            "company_slug": "acme",
+            "email": "sales@example.com",
+            "password": "super-secret-password",
+        },
     )
     sales_token = login_response.json()["access_token"]
 

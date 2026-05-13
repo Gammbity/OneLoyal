@@ -81,7 +81,7 @@ def create_platform_admin_and_login(client: TestClient) -> dict[str, Any]:
 
     asyncio.run(create_user())
     response = client.post(
-        "/api/v1/auth/login",
+        "/api/v1/auth/platform-login",
         json={
             "email": "platform@example.com",
             "password": "super-secret-password",
