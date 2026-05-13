@@ -11,6 +11,7 @@ from app.db import models  # noqa: F401
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import create_app
+from test_data import seed_sample_data
 
 
 @pytest.fixture
@@ -52,3 +53,14 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
     app.dependency_overrides.clear()
     asyncio.run(engine.dispose())
     get_settings.cache_clear()
+
+
+@pytest.fixture
+def sample_data(client: TestClient) -> dict[str, object]:
+    sessionmaker = client.app.state.test_sessionmaker
+
+    async def _seed() -> dict[str, object]:
+        async with sessionmaker() as session:
+            return await seed_sample_data(session)
+
+    return asyncio.run(_seed())

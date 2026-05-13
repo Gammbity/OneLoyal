@@ -1893,13 +1893,34 @@ function GiftTiersScreen() {
     // translations map
     title_i18n: { en: "", uz: "", ru: "" } as Record<string, string>,
     description_i18n: { en: "", uz: "", ru: "" } as Record<string, string>,
+    required_amount: "10", // amount in major currency units (e.g., dollars)
     required_amount_minor: "1000000",
+    selected_currency: "UZS", // currency selector
     stock_tracking_mode: "none",
     stock_quantity: "",
     is_active: true,
   });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  
+  // Convert major amount to minor (e.g., 10.50 -> 1050 for cents)
+  const majorToMinor = (major: string) => {
+    const num = parseFloat(major) || 0;
+    return Math.max(1, Math.floor(num * 100)).toString();
+  };
+  
+  // Convert minor amount to major (e.g., 1050 -> 10.50)
+  const minorToMajor = (minor: string) => {
+    const num = parseInt(minor) || 0;
+    return (num / 100).toFixed(2);
+  };
+  
+  // Format amount with dot thousands separator (e.g., 1000000 -> 1.000.000)
+  const formatAmount = (amount: string): string => {
+    if (!amount || amount === "") return "";
+    const num = parseFloat(amount) || 0;
+    return num.toFixed(2).replace(/(\d)(?=(\d{3})+(?!\d))/g, "$1.");
+  };
 
   useEffect(() => {
     if (!campaignId && campaigns.data.items[0]) {
@@ -1925,6 +1946,7 @@ function GiftTiersScreen() {
       title: "",
       title_i18n: { en: "", uz: "", ru: "" },
       description_i18n: { en: "", uz: "", ru: "" },
+      required_amount: "10",
       required_amount_minor: "1000000",
       stock_tracking_mode: "none",
       stock_quantity: "",
@@ -1938,6 +1960,7 @@ function GiftTiersScreen() {
       title: tier.title,
       title_i18n: tier.title_i18n ?? { en: tier.title, uz: "", ru: "" },
       description_i18n: tier.description_i18n ?? { en: tier.description ?? "", uz: "", ru: "" },
+      required_amount: minorToMajor(String(tier.required_amount_minor)),
       required_amount_minor: String(tier.required_amount_minor),
       stock_tracking_mode: tier.stock_tracking_mode,
       stock_quantity: tier.stock_quantity === null ? "" : String(tier.stock_quantity),
@@ -1952,7 +1975,7 @@ function GiftTiersScreen() {
     }
     const payload: any = {
       title: form.title,
-      required_amount_minor: Number(form.required_amount_minor),
+      required_amount_minor: Number(majorToMinor(form.required_amount)),
       stock_tracking_mode: form.stock_tracking_mode,
       stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : null,
       is_active: form.is_active,
@@ -2112,16 +2135,45 @@ function GiftTiersScreen() {
                   />
                 </Field>
             <Field label={t("gift_tiers.field.required_amount")}>
-              <input
-                className="input"
-                type="number"
-                min={1}
-                value={form.required_amount_minor}
-                onChange={(event) =>
-                  setForm({ ...form, required_amount_minor: event.target.value })
-                }
-                required
-              />
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="Enter amount"
+                  value={form.required_amount}
+                  onChange={(event) => {
+                    const major = event.target.value;
+                    setForm({ 
+                      ...form, 
+                      required_amount: major,
+                      required_amount_minor: majorToMinor(major)
+                    });
+                  }}
+                  required
+                  style={{ flex: 1 }}
+                />
+                {selectedCampaign?.currency && (
+                  <div style={{ 
+                    padding: "8px 12px", 
+                    background: "#f5f5f5", 
+                    borderRadius: 4, 
+                    fontSize: 14,
+                    fontWeight: 500,
+                    minWidth: 70,
+                    textAlign: "center",
+                    whiteSpace: "nowrap"
+                  }}>
+                    {selectedCampaign.currency}
+                  </div>
+                )}
+              </div>
+              {form.required_amount && form.required_amount !== "" && (
+                <div style={{ marginTop: 4, fontSize: 12, color: "#666" }}>
+                  {formatAmount(form.required_amount)}
+                </div>
+              )}
             </Field>
             <div className="form-grid two">
               <Field label={t("gift_tiers.field.tracking")}>
