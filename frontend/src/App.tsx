@@ -1824,13 +1824,13 @@ function GiftTiersScreen() {
           `/campaigns/${campaignId}/gift-tiers/${editingId}`,
           { method: "PATCH", body: JSON.stringify(payload) },
         );
-        setNotice("Gift tier updated.");
+        setNotice(t("gift_tiers.notice.updated"));
       } else {
         await apiRequest<GiftTier>(`/campaigns/${campaignId}/gift-tiers`, {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setNotice("Gift tier created.");
+        setNotice(t("gift_tiers.notice.created"));
       }
       resetForm();
       tiers.reload();
@@ -1846,7 +1846,7 @@ function GiftTiersScreen() {
       await apiRequest(`/campaigns/${campaignId}/gift-tiers/${tier.id}`, {
         method: "DELETE",
       });
-      setNotice("Gift tier deleted.");
+      setNotice(t("gift_tiers.notice.deleted"));
       tiers.reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -1856,8 +1856,8 @@ function GiftTiersScreen() {
   return (
     <>
       <PageHeader
-        title="Gift Tiers"
-        subtitle={selectedCampaign?.title ?? "Select a campaign"}
+        title={t("gift_tiers.title")}
+        subtitle={selectedCampaign?.title ?? t("gift_tiers.selectCampaign")}
         actions={
           <div className="actions">
             <CampaignPicker
@@ -1865,12 +1865,12 @@ function GiftTiersScreen() {
               value={campaignId}
               onChange={setCampaignId}
             />
-            <IconButton icon={RefreshCw} label="Refresh" onClick={tiers.reload} />
+            <IconButton icon={RefreshCw} label={t("common.refresh")} onClick={tiers.reload} />
           </div>
         }
       />
       <div className="split">
-        <Panel title="Tiers">
+        <Panel title={t("gift_tiers.tiers")}>
           {tiers.loading ? <Loading /> : null}
           {notice ? <Notice kind="success">{notice}</Notice> : null}
           {error ?? tiers.error ? (
@@ -1879,12 +1879,12 @@ function GiftTiersScreen() {
           {tiers.data.length ? (
             <Table
               headers={[
-                "Title",
-                "Required",
-                "Stock",
-                "Reserved",
-                "Available",
-                "Actions",
+                t("gift_tiers.table.title"),
+                t("gift_tiers.table.required"),
+                t("gift_tiers.table.stock"),
+                t("gift_tiers.table.reserved"),
+                t("gift_tiers.table.available"),
+                t("common.actions"),
               ]}
             >
               {tiers.data.map((tier) => (
@@ -1901,12 +1901,12 @@ function GiftTiersScreen() {
                     <div className="actions">
                       <IconButton
                         icon={ChevronRight}
-                        label="Edit"
+                        label={t("common.edit")}
                         onClick={() => editTier(tier)}
                       />
                       <IconButton
                         icon={Trash2}
-                        label="Delete"
+                        label={t("common.delete")}
                         onClick={() => deleteTier(tier)}
                       />
                     </div>
@@ -1915,12 +1915,12 @@ function GiftTiersScreen() {
               ))}
             </Table>
           ) : (
-            <Empty>No gift tiers.</Empty>
+            <Empty>{t("gift_tiers.no_tiers")}</Empty>
           )}
         </Panel>
-        <Panel title={editingId ? "Edit Tier" : "New Tier"}>
+        <Panel title={editingId ? t("gift_tiers.edit_tier") : t("gift_tiers.new_tier") }>
           <form className="form-grid" onSubmit={saveTier}>
-            <Field label="Title">
+            <Field label={t("gift_tiers.field.title")}>
               <input
                 className="input"
                 value={form.title}
@@ -1930,7 +1930,7 @@ function GiftTiersScreen() {
                 required
               />
             </Field>
-            <Field label="Required amount">
+            <Field label={t("gift_tiers.field.required_amount")}>
               <input
                 className="input"
                 type="number"
@@ -1943,7 +1943,7 @@ function GiftTiersScreen() {
               />
             </Field>
             <div className="form-grid two">
-              <Field label="Tracking">
+              <Field label={t("gift_tiers.field.tracking")}>
                 <select
                   className="select"
                   value={form.stock_tracking_mode}
@@ -1951,12 +1951,12 @@ function GiftTiersScreen() {
                     setForm({ ...form, stock_tracking_mode: event.target.value })
                   }
                 >
-                  <option value="none">None</option>
-                  <option value="soft">Soft</option>
-                  <option value="strict">Strict</option>
+                  <option value="none">{t("gift_tiers.option.none")}</option>
+                  <option value="soft">{t("gift_tiers.option.soft")}</option>
+                  <option value="strict">{t("gift_tiers.option.strict")}</option>
                 </select>
               </Field>
-              <Field label="Stock">
+              <Field label={t("gift_tiers.field.stock")}>
                 <input
                   className="input"
                   type="number"
@@ -1968,7 +1968,7 @@ function GiftTiersScreen() {
                 />
               </Field>
             </div>
-            <Field label="Active">
+            <Field label={t("gift_tiers.field.active")}>
               <select
                 className="select"
                 value={form.is_active ? "true" : "false"}
@@ -1976,15 +1976,15 @@ function GiftTiersScreen() {
                   setForm({ ...form, is_active: event.target.value === "true" })
                 }
               >
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
+                <option value="true">{t("gift_tiers.option.active")}</option>
+                <option value="false">{t("gift_tiers.option.inactive")}</option>
               </select>
             </Field>
             <div className="actions">
-              <Button icon={Check}>{editingId ? "Save tier" : "Create tier"}</Button>
+              <Button icon={Check}>{editingId ? t("gift_tiers.action.save") : t("gift_tiers.action.create")}</Button>
               {editingId ? (
                 <Button type="button" variant="secondary" onClick={resetForm}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               ) : null}
             </div>
