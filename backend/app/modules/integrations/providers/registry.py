@@ -5,8 +5,15 @@ from app.modules.integrations.models import Integration
 from app.modules.integrations.providers.base import ERPProvider
 from app.modules.integrations.providers.fake import FakeProvider
 from app.modules.integrations.providers.moysklad import MoySkladProvider
+from app.modules.integrations.providers.odoo import OdooProvider
+from app.modules.integrations.providers.one_c import OneCProvider
 
-ProviderFactory = type[FakeProvider] | type[MoySkladProvider]
+ProviderFactory = (
+    type[FakeProvider]
+    | type[MoySkladProvider]
+    | type[OdooProvider]
+    | type[OneCProvider]
+)
 
 
 class ProviderRegistry:
@@ -41,3 +48,5 @@ class ProviderRegistry:
 provider_registry = ProviderRegistry()
 provider_registry.register(FakeProvider.provider_name, FakeProvider)
 provider_registry.register(MoySkladProvider.provider_name, MoySkladProvider)
+provider_registry.register(OdooProvider.provider_name, OdooProvider)
+provider_registry.register(OneCProvider.provider_name, OneCProvider)

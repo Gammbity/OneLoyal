@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     moysklad_timeout_seconds: float = 15.0
     moysklad_page_limit: int = Field(default=1000, ge=1, le=1000)
     moysklad_max_retries: int = Field(default=2, ge=0)
+    odoo_timeout_seconds: float = 20.0
+    odoo_page_limit: int = Field(default=200, ge=1, le=1000)
+    odoo_max_retries: int = Field(default=2, ge=0)
+    one_c_timeout_seconds: float = 30.0
+    one_c_page_limit: int = Field(default=200, ge=1, le=1000)
+    one_c_max_retries: int = Field(default=2, ge=0)
     sync_lock_ttl_seconds: int = 1800
     sync_task_time_limit_seconds: int = 3600
     sync_task_soft_time_limit_seconds: int = 3300
