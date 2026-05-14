@@ -227,6 +227,7 @@ def test_moysklad_client_success_and_basic_auth() -> None:
     assert requests[0].url.params["offset"] == "0"
     assert requests[0].url.params["limit"] == "1"
     assert requests[0].headers["authorization"].startswith("Basic ")
+    assert requests[0].headers["accept"] == "application/json;charset=utf-8"
     assert requests[0].headers["accept-encoding"] == "gzip"
 
 
@@ -263,6 +264,7 @@ def test_moysklad_client_lists_demands_with_filters() -> None:
     assert requests[0].url.path == "/api/remap/1.2/entity/demand"
     assert requests[0].url.params["offset"] == "20"
     assert requests[0].url.params["limit"] == "10"
+    assert requests[0].headers["accept"] == "application/json;charset=utf-8"
     assert requests[0].url.params["filter"] == (
         "moment>=2026-01-01 00:00:00;moment<=2026-12-31 23:59:59"
     )
@@ -1004,3 +1006,148 @@ def test_moysklad_test_and_sync_handle_provider_failure(
     assert sync_run["status"] == "failed"
     assert sync_run["error_summary"] == message
     assert "moysklad-secret" not in str(sync_run)
+
+
+def test_moysklad_full_sync_with_customers_and_sales_all_rows_imported(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: ensure all returned rows from API are actually imported."""
+
+    # Track requests to understand what's being called
+    call_log: list[dict[str, Any]] = []
+
+    async def fake_list_counterparties_paged(
+        self: MoySkladClient,
+        *,
+        offset: int,
+        limit: int,
+    ) -> dict[str, Any]:
+        """Return paginated counterparties without filters."""
+        call_log.append(
+            {
+                "method": "list_counterparties",
+                "offset": offset,
+                "limit": limit,
+            }
+        )
+        if offset == 0:
+            return {
+                "meta": {"size": 3, "limit": 2, "offset": 0},
+                "rows": [
+                    counterparty_payload("c-1", name="Customer 1"),
+                    counterparty_payload("c-2", name="Customer 2"),
+                ],
+            }
+        elif offset == 2:
+            return {
+                "meta": {"size": 3, "limit": 2, "offset": 2},
+                "rows": [counterparty_payload("c-3", name="Customer 3")],
+            }
+        return {"meta": {"size": 3, "limit": 2, "offset": offset}, "rows": []}
+
+    async def fake_list_demands_paged(
+        self: MoySkladClient,
+        *,
+        offset: int,
+        limit: int,
+        filters: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Return paginated demands without filtering (no date restrictions)."""
+        call_log.append(
+            {
+                "method": "list_demands",
+                "offset": offset,
+                "limit": limit,
+                "filters": filters,
+            }
+        )
+        if offset == 0:
+            return {
+                "meta": {"size": 3, "limit": 2, "offset": 0},
+                "rows": [
+                    demand_payload("d-1", counterparty_id="c-1", amount=10_000_000),
+                    demand_payload("d-2", counterparty_id="c-2", amount=20_000_000),
+                ],
+            }
+        elif offset == 2:
+            return {
+                "meta": {"size": 3, "limit": 2, "offset": 2},
+                "rows": [demand_payload("d-3", counterparty_id="c-3", amount=30_000_000)],
+            }
+        return {"meta": {"size": 3, "limit": 2, "offset": offset}, "rows": []}
+
+    monkeypatch.setattr(
+        MoySkladClient,
+        "list_counterparties",
+        fake_list_counterparties_paged,
+    )
+    monkeypatch.setattr(
+        MoySkladClient,
+        "list_demands",
+        fake_list_demands_paged,
+    )
+    owner = register_company(client)
+    campaign = create_active_campaign(client, token=owner["access_token"])
+    integration = create_moysklad_integration(
+        client,
+        token=owner["access_token"],
+        settings_json={"page_limit": 2},  # Use small page size to test pagination
+    )
+
+    # Execute sync
+    sync_run = queue_and_execute_sync(
+        client,
+        token=owner["access_token"],
+        integration_id=integration["id"],
+    )
+
+    # Fetch results
+    customers_response = client.get(
+        "/api/v1/customers",
+        headers=auth_headers(owner["access_token"]),
+    )
+    sales_response = client.get(
+        "/api/v1/sale-records",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    # Debug: Print what actually happened
+    print(f"\nSync status: {sync_run['status']}")
+    print(f"Sync stats: {sync_run['stats_json']}")
+    print(f"API calls made: {call_log}")
+
+    if sync_run["status"] != "success":
+        errors_response = client.get(
+            f"/api/v1/sync-runs/{sync_run['id']}/errors",
+            headers=auth_headers(owner["access_token"]),
+        )
+        print(f"Error summary: {sync_run.get('error_summary')}")
+        print(f"Errors: {errors_response.json()['items']}")
+
+    # Verify sync succeeded and all data was imported
+    assert sync_run["status"] == "success", (
+        f"Sync failed: {sync_run.get('error_summary')}"
+    )
+    assert sync_run["stats_json"]["fetched_customers"] == 3
+    assert sync_run["stats_json"]["created_customers"] == 3
+    assert sync_run["stats_json"]["fetched_sales"] == 3
+    assert sync_run["stats_json"]["created_sales"] == 3
+
+    # Verify all customer records were created
+    customers = customers_response.json()
+    assert customers["pagination"]["total"] == 3
+    customer_names = {c["name"] for c in customers["items"]}
+    assert customer_names == {"Customer 1", "Customer 2", "Customer 3"}
+
+    # Verify all sale records were created
+    sales = sales_response.json()
+    assert sales["pagination"]["total"] == 3
+    # Sales are identified by source_key which is "provider:external_id"
+    sale_source_keys = {s["source_key"] for s in sales["items"]}
+    expected_keys = {"moysklad:d-1", "moysklad:d-2", "moysklad:d-3"}
+    assert sale_source_keys == expected_keys, (
+        f"Expected {expected_keys}, got {sale_source_keys}"
+    )
+    total_sales_amount = sum(s["gross_amount_minor"] for s in sales["items"])
+    assert total_sales_amount == 60_000_000  # 10M + 20M + 30M

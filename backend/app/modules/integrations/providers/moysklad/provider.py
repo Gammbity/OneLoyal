@@ -1,8 +1,11 @@
+import logging
 from collections.abc import Mapping
 from datetime import date
 from typing import Any
 
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 from app.core.settings import get_settings
 from app.modules.integrations.models import Integration
@@ -83,24 +86,50 @@ class MoySkladProvider:
         limit = int(self.settings.get("page_limit") or settings.moysklad_page_limit)
         limit = max(1, min(limit, 1000))
 
+        logger.debug(
+            "MoySklad fetch_customers starting",
+            extra={"offset": offset, "limit": limit},
+        )
+
         async with self._client() as client:
             payload = await client.list_counterparties(offset=offset, limit=limit)
 
         rows = payload.get("rows")
         if not isinstance(rows, list):
+            logger.warning(
+                "MoySklad fetch_customers: rows is not a list",
+                extra={"rows_type": type(rows).__name__},
+            )
             rows = []
 
         customers: list[ERPCustomerDTO] = []
         errors: list[ProviderRowError] = []
         skipped_rows = 0
-        for row in rows:
+        for idx, row in enumerate(rows):
             if not isinstance(row, dict):
+                logger.debug(
+                    "MoySklad fetch_customers: skipping non-dict row",
+                    extra={"row_index": idx, "row_type": type(row).__name__},
+                )
                 skipped_rows += 1
                 continue
             try:
-                customers.append(map_counterparty_to_customer(row))
+                customer = map_counterparty_to_customer(row)
+                customers.append(customer)
+                logger.debug(
+                    "MoySklad fetch_customers: mapped counterparty",
+                    extra={"external_id": customer.external_id},
+                )
             except (ValueError, ValidationError) as exc:
                 skipped_rows += 1
+                logger.warning(
+                    "MoySklad fetch_customers: mapping error",
+                    extra={
+                        "row_index": idx,
+                        "error": str(exc),
+                        "external_id": row.get("id"),
+                    },
+                )
                 errors.append(
                     ProviderRowError(
                         external_id=row.get("id"),
@@ -113,6 +142,17 @@ class MoySkladProvider:
         page_size = len(rows)
         has_more = page_size >= limit
         next_cursor = {"offset": offset + page_size} if has_more else None
+        logger.info(
+            "MoySklad fetch_customers completed",
+            extra={
+                "fetched_rows": page_size,
+                "mapped_customers": len(customers),
+                "skipped_rows": skipped_rows,
+                "has_more": has_more,
+                "offset": offset,
+                "limit": limit,
+            },
+        )
         return ProviderFetchResult(
             items=customers,
             next_cursor=next_cursor,
@@ -143,6 +183,17 @@ class MoySkladProvider:
             end_date=end_date or self._settings_date("sales_end_date"),
         )
 
+        logger.debug(
+            "MoySklad fetch_sales starting",
+            extra={
+                "offset": offset,
+                "limit": limit,
+                "filters": filters,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+        )
+
         async with self._client() as client:
             payload = await client.list_demands(
                 offset=offset,
@@ -152,13 +203,21 @@ class MoySkladProvider:
 
         rows = payload.get("rows")
         if not isinstance(rows, list):
+            logger.warning(
+                "MoySklad fetch_sales: rows is not a list",
+                extra={"rows_type": type(rows).__name__},
+            )
             rows = []
 
         sales: list[ERPSaleDTO] = []
         errors: list[ProviderRowError] = []
         default_currency = str(self.settings.get("default_currency") or "UZS")
-        for row in rows:
+        for idx, row in enumerate(rows):
             if not isinstance(row, dict):
+                logger.debug(
+                    "MoySklad fetch_sales: skipping non-dict row",
+                    extra={"row_index": idx, "row_type": type(row).__name__},
+                )
                 errors.append(
                     ProviderRowError(
                         external_id=None,
@@ -169,10 +228,21 @@ class MoySkladProvider:
                 )
                 continue
             try:
-                sales.append(
-                    map_demand_to_sale(row, default_currency=default_currency)
+                sale = map_demand_to_sale(row, default_currency=default_currency)
+                sales.append(sale)
+                logger.debug(
+                    "MoySklad fetch_sales: mapped demand",
+                    extra={"external_id": sale.external_id},
                 )
             except (ValueError, ValidationError) as exc:
+                logger.warning(
+                    "MoySklad fetch_sales: mapping error",
+                    extra={
+                        "row_index": idx,
+                        "error": str(exc),
+                        "external_id": row.get("id"),
+                    },
+                )
                 errors.append(
                     ProviderRowError(
                         external_id=row.get("id"),
@@ -185,6 +255,17 @@ class MoySkladProvider:
         page_size = len(rows)
         has_more = page_size >= limit
         next_cursor = {"offset": offset + page_size} if has_more else None
+        logger.info(
+            "MoySklad fetch_sales completed",
+            extra={
+                "fetched_rows": page_size,
+                "mapped_sales": len(sales),
+                "skipped_rows": len(errors),
+                "has_more": has_more,
+                "offset": offset,
+                "limit": limit,
+            },
+        )
         return ProviderFetchResult(
             items=sales,
             next_cursor=next_cursor,
