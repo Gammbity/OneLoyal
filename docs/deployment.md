@@ -27,6 +27,13 @@ This guide covers how to deploy OneLoyal using Docker and Compose.
    - Postgres: localhost:5432
    - Redis: localhost:6379
 
+  If Docker Hub is slow or blocked on your network, you can point the backend build at a different Python image before running Compose:
+
+  ```bash
+  set PYTHON_IMAGE=my-registry.example.com/library/python:3.12-slim
+  docker compose up --build
+  ```
+
 ## Production Deployment
 
 ### 1. Preparation

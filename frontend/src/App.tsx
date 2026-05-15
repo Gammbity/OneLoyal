@@ -1902,24 +1902,29 @@ function GiftTiersScreen() {
   });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  
-  // Convert major amount to minor (e.g., 10.50 -> 1050 for cents)
-  const majorToMinor = (major: string) => {
+
+  const getTierCurrency = () => selectedCampaign?.currency ?? form.selected_currency;
+  const currencyScale = (currency: string) => (currency.toUpperCase() === "UZS" ? 0 : 2);
+
+  // Convert major amount to stored minor units using the campaign currency scale.
+  const majorToMinor = (major: string, currency: string) => {
     const num = parseFloat(major) || 0;
-    return Math.max(1, Math.floor(num * 100)).toString();
+    const scale = currencyScale(currency);
+    return Math.max(1, Math.floor(num * 10 ** scale)).toString();
   };
-  
-  // Convert minor amount to major (e.g., 1050 -> 10.50)
-  const minorToMajor = (minor: string) => {
+
+  // Convert stored minor units back to display units using the campaign currency scale.
+  const minorToMajor = (minor: string, currency: string) => {
     const num = parseInt(minor) || 0;
-    return (num / 100).toFixed(2);
+    const scale = currencyScale(currency);
+    return scale === 0 ? String(num) : (num / 10 ** scale).toFixed(scale);
   };
-  
-  // Format amount with dot thousands separator (e.g., 1000000 -> 1.000.000)
-  const formatAmount = (amount: string): string => {
+
+  const formatAmount = (amount: string, currency: string): string => {
     if (!amount || amount === "") return "";
     const num = parseFloat(amount) || 0;
-    return num.toFixed(2).replace(/(\d)(?=(\d{3})+(?!\d))/g, "$1.");
+    const scale = currencyScale(currency);
+    return num.toFixed(scale).replace(/(\d)(?=(\d{3})+(?!\d))/g, "$1.");
   };
 
   useEffect(() => {
@@ -1948,6 +1953,7 @@ function GiftTiersScreen() {
       description_i18n: { en: "", uz: "", ru: "" },
       required_amount: "10",
       required_amount_minor: "1000000",
+      selected_currency: selectedCampaign?.currency ?? "UZS",
       stock_tracking_mode: "none",
       stock_quantity: "",
       is_active: true,
@@ -1960,8 +1966,9 @@ function GiftTiersScreen() {
       title: tier.title,
       title_i18n: tier.title_i18n ?? { en: tier.title, uz: "", ru: "" },
       description_i18n: tier.description_i18n ?? { en: tier.description ?? "", uz: "", ru: "" },
-      required_amount: minorToMajor(String(tier.required_amount_minor)),
+      required_amount: minorToMajor(String(tier.required_amount_minor), tier.currency),
       required_amount_minor: String(tier.required_amount_minor),
+      selected_currency: tier.currency,
       stock_tracking_mode: tier.stock_tracking_mode,
       stock_quantity: tier.stock_quantity === null ? "" : String(tier.stock_quantity),
       is_active: tier.is_active,
@@ -1973,9 +1980,10 @@ function GiftTiersScreen() {
     if (!campaignId) {
       return;
     }
+    const currency = getTierCurrency();
     const payload: any = {
       title: form.title,
-      required_amount_minor: Number(majorToMinor(form.required_amount)),
+      required_amount_minor: Number(majorToMinor(form.required_amount, currency)),
       stock_tracking_mode: form.stock_tracking_mode,
       stock_quantity: form.stock_quantity ? Number(form.stock_quantity) : null,
       is_active: form.is_active,
@@ -2139,8 +2147,8 @@ function GiftTiersScreen() {
                 <input
                   className="input"
                   type="number"
-                  step="0.01"
-                  min="0.01"
+                  step={currencyScale(getTierCurrency()) === 0 ? "1" : "0.01"}
+                  min={currencyScale(getTierCurrency()) === 0 ? "1" : "0.01"}
                   placeholder="Enter amount"
                   value={form.required_amount}
                   onChange={(event) => {
@@ -2148,7 +2156,7 @@ function GiftTiersScreen() {
                     setForm({ 
                       ...form, 
                       required_amount: major,
-                      required_amount_minor: majorToMinor(major)
+                      required_amount_minor: majorToMinor(major, getTierCurrency()),
                     });
                   }}
                   required
@@ -2171,7 +2179,7 @@ function GiftTiersScreen() {
               </div>
               {form.required_amount && form.required_amount !== "" && (
                 <div style={{ marginTop: 4, fontSize: 12, color: "#666" }}>
-                  {formatAmount(form.required_amount)}
+                  {formatAmount(form.required_amount, getTierCurrency())}
                 </div>
               )}
             </Field>

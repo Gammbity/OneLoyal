@@ -2,6 +2,8 @@ services:
   api:
     build:
       context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     env_file:
       - ./backend/.env
@@ -22,6 +24,8 @@ services:
   worker:
     build:
       context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
     env_file:
       - ./backend/.env
@@ -38,6 +42,8 @@ services:
   beat:
     build:
       context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=INFO
     env_file:
       - ./backend/.env
@@ -54,6 +60,8 @@ services:
   migrate:
     build:
       context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
     command: alembic upgrade head
     env_file:
       - ./backend/.env
